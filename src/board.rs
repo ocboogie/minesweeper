@@ -73,51 +73,37 @@ impl Board {
     }
 
     pub fn count_mines(&self, x: usize, y: usize) -> usize {
-        let mut count = 0;
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                let nx = x as isize + dx;
-                let ny = y as isize + dy;
-                if nx < 0 || nx >= self.width as isize {
-                    continue;
-                }
-                if ny < 0 || ny >= self.height as isize {
-                    continue;
-                }
-                let nx = nx as usize;
-                let ny = ny as usize;
-                if self.cells[ny * self.width + nx].kind == CellKind::Mine {
-                    count += 1;
-                }
-            }
-        }
-        count
+        self.neighbors(x, y)
+            .filter(|(x, y)| self.cells[*y * self.width + *x].kind == CellKind::Mine)
+            .count()
     }
+
     pub fn count_flags(&self, x: usize, y: usize) -> usize {
-        let mut count = 0;
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
+        self.neighbors(x, y)
+            .filter(|(x, y)| self.cells[*y * self.width + *x].state == CellState::Flagged)
+            .count()
+    }
+
+    pub fn neighbors(&self, x: usize, y: usize) -> impl Iterator<Item = (usize, usize)> {
+        let width = self.width;
+        let height = self.height;
+
+        (-1..=1)
+            .flat_map(move |dy| (-1..=1).map(move |dx| (dx, dy)))
+            .filter(move |&(dx, dy)| dx != 0 || dy != 0)
+            .filter_map(move |(dx, dy)| {
                 let nx = x as isize + dx;
                 let ny = y as isize + dy;
-                if nx < 0 || nx >= self.width as isize {
-                    continue;
+                if nx < 0 || nx >= width as isize {
+                    return None;
                 }
-                if ny < 0 || ny >= self.height as isize {
-                    continue;
+                if ny < 0 || ny >= height as isize {
+                    return None;
                 }
                 let nx = nx as usize;
                 let ny = ny as usize;
-                if self.cells[ny * self.width + nx].state == CellState::Flagged {
-                    count += 1;
-                }
-            }
-        }
-        count
+
+                Some((nx, ny))
+            })
     }
 }

@@ -36,26 +36,9 @@ impl Minesweeper {
 
         if cell.state == CellState::Opened {
             if mines == self.board.count_flags(x, y) {
-                for dx in -1..=1 {
-                    for dy in -1..=1 {
-                        if dx == 0 && dy == 0 {
-                            continue;
-                        }
-                        let nx = x as isize + dx;
-                        let ny = y as isize + dy;
-                        if nx < 0 || nx >= self.board.width as isize {
-                            continue;
-                        }
-                        if ny < 0 || ny >= self.board.height as isize {
-                            continue;
-                        }
-                        let nx = nx as usize;
-                        let ny = ny as usize;
-
-                        let cell = &self.board.cells[ny * self.board.width + nx];
-                        if cell.state == CellState::Hidden {
-                            self.open_cell(nx, ny);
-                        }
+                for (x, y) in self.board.neighbors(x, y) {
+                    if self.board.cells[y * self.board.width + x].state == CellState::Hidden {
+                        self.open_cell(x, y);
                     }
                 }
             }
@@ -73,23 +56,9 @@ impl Minesweeper {
             return;
         }
 
-        for dy in -1..=1 {
-            for dx in -1..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                let nx = x as isize + dx;
-                let ny = y as isize + dy;
-                if nx < 0 || nx >= self.board.width as isize {
-                    continue;
-                }
-                if ny < 0 || ny >= self.board.height as isize {
-                    continue;
-                }
-                let nx = nx as usize;
-                let ny = ny as usize;
-
-                self.open_cell(nx, ny);
+        for (x, y) in self.board.neighbors(x, y) {
+            if self.board.cells[y * self.board.width + x].state == CellState::Hidden {
+                self.open_cell(x, y);
             }
         }
     }

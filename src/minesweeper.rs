@@ -235,7 +235,6 @@ impl Widget for &mut Minesweeper {
 impl eframe::App for Minesweeper {
     fn update(&mut self, ctx: &eframe::egui::Context, _: &mut eframe::Frame) {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
-            ctx.request_repaint();
             self.ui(ui);
         });
     }

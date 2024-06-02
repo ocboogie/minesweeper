@@ -1888,6 +1888,7 @@ dependencies = [
  "egui",
  "egui_extras",
  "env_logger",
+ "once_cell",
  "rand",
 ]
 

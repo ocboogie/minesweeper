@@ -1,6 +1,16 @@
+use egui::{Image, ImageSource, TextureOptions};
+
 mod board;
+mod board_ui;
 mod canvas;
 mod minesweeper;
+mod ms_frame;
+
+pub fn load_image(src: ImageSource) -> Image<'_> {
+    Image::new(src)
+        .fit_to_original_size(1.0)
+        .texture_options(TextureOptions::NEAREST)
+}
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -8,7 +18,7 @@ fn main() -> Result<(), eframe::Error> {
     let game = minesweeper::Minesweeper::new(16, 16, 40);
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size(game.size()),
+        viewport: egui::ViewportBuilder::default().with_inner_size(game.board.size()),
         ..Default::default()
     };
 

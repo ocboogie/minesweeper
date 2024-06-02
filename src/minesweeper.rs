@@ -1,241 +1,212 @@
-use crate::board::{Board, CellKind, CellState};
+use std::{f32::consts::PI, time::Instant};
+
+use crate::canvas::Canvas;
+use crate::load_image;
+use crate::ms_frame::MinesweeperFrame;
+use crate::{
+    board::{Board, CellKind, CellState},
+    board_ui::BoardUI,
+};
 use eframe::{
     egui::{Image, Sense, Ui, Widget},
     epaint::{vec2, Rect},
 };
-use egui::{emath::RectTransform, pos2, Pos2, Response, TextureOptions, Vec2};
+use egui::{
+    emath::RectTransform, epaint::Shadow, include_image, pos2, style::Spacing, Align, Color32,
+    Frame, ImageSource, InnerResponse, Layout, Margin, Pos2, Response, Shape, Stroke,
+    TextureOptions, Vec2,
+};
+
+const DIGITS_IN_COUNTERS: usize = 3;
+const FACE_SIZE: f32 = 24.0;
 
 pub struct Minesweeper {
-    pub board: Board,
-    pub started: bool,
-    pub game_over: bool,
-    pub win: bool,
+    pub board: BoardUI,
+    pub canvas: Canvas,
+    pub mines: usize,
+    pub start: Instant,
+
+    pub digits: [Image<'static>; 10],
+    pub margin_corners: [Image<'static>; 2],
+    pub faces: [Image<'static>; 5],
 }
 
 impl Minesweeper {
+    fn load_digits() -> [Image<'static>; 10] {
+        [
+            load_image(include_image!("../assets/d-0.png")),
+            load_image(include_image!("../assets/d-1.png")),
+            load_image(include_image!("../assets/d-2.png")),
+            load_image(include_image!("../assets/d-3.png")),
+            load_image(include_image!("../assets/d-4.png")),
+            load_image(include_image!("../assets/d-5.png")),
+            load_image(include_image!("../assets/d-6.png")),
+            load_image(include_image!("../assets/d-7.png")),
+            load_image(include_image!("../assets/d-8.png")),
+            load_image(include_image!("../assets/d-9.png")),
+        ]
+    }
+
+    fn load_margin_corners() -> [Image<'static>; 2] {
+        [
+            load_image(include_image!("../assets/margin-corner-2.png")),
+            load_image(include_image!("../assets/margin-corner-3.png")),
+        ]
+    }
+
+    fn load_faces() -> [Image<'static>; 5] {
+        [
+            load_image(include_image!("../assets/face.png")),
+            load_image(include_image!("../assets/face-pressed.png")),
+            load_image(include_image!("../assets/face-pressing.png")),
+            load_image(include_image!("../assets/face-won.png")),
+            load_image(include_image!("../assets/face-lost.png")),
+        ]
+    }
+
     pub fn new(width: usize, height: usize, mines: usize) -> Self {
         Minesweeper {
-            board: Board::generate(width, height, mines),
-            started: false,
-            game_over: false,
-            win: false,
+            board: BoardUI::new(width, height, mines),
+            mines,
+            canvas: Canvas::new(),
+            start: Instant::now(),
+            digits: Self::load_digits(),
+            margin_corners: Self::load_margin_corners(),
+            faces: Self::load_faces(),
         }
     }
 
-    pub fn open_cell(&mut self, x: usize, y: usize) {
-        if self.game_over {
-            return;
-        }
+    // pub fn minesweeper_frame<R>(
+    //     &self,
+    //     ui: &mut Ui,
+    //     margin: Margin,
+    //     border: usize,
+    //     protruded: bool,
+    //     add_contents: impl FnOnce(&mut Ui) -> R,
+    // ) -> InnerResponse<R> {
+    // }
 
-        if !self.started {
-            self.started = true;
-        }
+    pub fn counter(&self, ui: &mut Ui, number: usize) -> Response {
+        MinesweeperFrame::new(1)
+            .show(ui, |ui| {
+                let response = ui
+                    .horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::splat(0.0);
 
-        let mines = self.board.count_mines(x, y);
-        let cell = &mut self.board.cells[y * self.board.width + x];
+                        for i in (0..DIGITS_IN_COUNTERS).rev() {
+                            let digit: usize = (number / 10_usize.pow(i as u32)) % 10;
+                            ui.add(self.digits[digit].clone());
+                        }
+                    })
+                    .response;
 
-        if cell.state == CellState::Opened {
-            if mines == self.board.count_flags(x, y) {
-                for (x, y) in self.board.neighbors(x, y) {
-                    if self.board.cells[y * self.board.width + x].state == CellState::Hidden {
-                        self.open_cell(x, y);
+                response
+            })
+            .inner
+    }
+
+    pub fn time_counter(&self, ui: &mut Ui) -> Response {
+        let secs: usize = self.start.elapsed().as_secs().try_into().unwrap();
+        self.counter(ui, secs)
+    }
+
+    pub fn mine_counter(&self, ui: &mut Ui) -> Response {
+        let mines = self
+            .board
+            .board
+            .cells
+            .iter()
+            .filter(|cell| cell.kind == CellKind::Mine && cell.state == CellState::Hidden)
+            .count();
+        self.counter(ui, mines)
+    }
+
+    pub fn face(&self, ui: &mut Ui) -> Response {
+        MinesweeperFrame::new(1)
+            .protruded()
+            .show(ui, |ui| {
+                let (rect, response) =
+                    ui.allocate_exact_size(Vec2::splat(FACE_SIZE), Sense::click());
+
+                let face = if response.is_pointer_button_down_on() {
+                    &self.faces[1]
+                } else if self.board.win {
+                    &self.faces[3]
+                } else if self.board.game_over {
+                    &self.faces[4]
+                } else {
+                    &self.faces[0]
+                };
+
+                face.paint_at(ui, rect);
+
+                response
+            })
+            .inner
+    }
+
+    pub fn header(&mut self, ui: &mut Ui) -> Response {
+        MinesweeperFrame::new(2)
+            .margin(Margin::symmetric(7.0, 4.0))
+            .show(ui, |ui| {
+                ui.with_layout(Layout::left_to_right(Align::TOP), |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::splat(0.0);
+                    let space = ui.available_width();
+
+                    self.time_counter(ui);
+
+                    let counter_size = space - ui.available_width();
+
+                    ui.add_space(((ui.available_width() - counter_size) / 2.0) - FACE_SIZE / 2.0);
+
+                    if self.face(ui).clicked() {
+                        self.board = BoardUI::new(
+                            self.board.board.width,
+                            self.board.board.height,
+                            self.mines,
+                        );
+                        self.start = Instant::now();
                     }
-                }
-            }
 
-            return;
-        }
+                    ui.add_space(ui.available_width() - counter_size);
 
-        cell.state = CellState::Opened;
-
-        if cell.kind == CellKind::Mine {
-            self.game_over = true;
-        }
-
-        if mines != 0 {
-            return;
-        }
-
-        for (x, y) in self.board.neighbors(x, y) {
-            if self.board.cells[y * self.board.width + x].state == CellState::Hidden {
-                self.open_cell(x, y);
-            }
-        }
-    }
-
-    pub fn toggle_flag(&mut self, x: usize, y: usize) {
-        if self.game_over {
-            return;
-        }
-        let cell = &mut self.board.cells[y * self.board.width + x];
-        if cell.state == CellState::Opened {
-            return;
-        }
-        cell.state = match cell.state {
-            CellState::Hidden => CellState::Flagged,
-            CellState::Flagged => CellState::Hidden,
-            CellState::Opened => unreachable!(),
-        };
-    }
-
-    pub fn size(&self) -> (f32, f32) {
-        (
-            self.board.width as f32 * 16.0,
-            self.board.height as f32 * 16.0,
-        )
-    }
-
-    fn opened_cell(count: usize) -> Image<'static> {
-        Self::pixelate(Image::new(match count {
-            0 => return Minesweeper::empty_cell(),
-            1 => egui::include_image!("../assets/1.png"),
-            2 => egui::include_image!("../assets/2.png"),
-            3 => egui::include_image!("../assets/3.png"),
-            4 => egui::include_image!("../assets/4.png"),
-            5 => egui::include_image!("../assets/5.png"),
-            6 => egui::include_image!("../assets/6.png"),
-            7 => egui::include_image!("../assets/7.png"),
-            8 => egui::include_image!("../assets/8.png"),
-            _ => unreachable!(),
-        }))
-    }
-
-    fn pixelate(image: Image) -> Image {
-        image.texture_options(TextureOptions::NEAREST)
-    }
-
-    fn empty_cell() -> Image<'static> {
-        Self::pixelate(Image::new(egui::include_image!("../assets/empty.png")))
-    }
-
-    fn hidden_cell() -> Image<'static> {
-        Self::pixelate(Image::new(egui::include_image!("../assets/hidden.png")))
-    }
-
-    fn flag_cell() -> Image<'static> {
-        Self::pixelate(Image::new(egui::include_image!("../assets/flag.png")))
-    }
-
-    fn opened_mine() -> Image<'static> {
-        Self::pixelate(Image::new(egui::include_image!(
-            "../assets/opened_mine.png"
-        )))
-    }
-
-    fn revealed_mine() -> Image<'static> {
-        Self::pixelate(Image::new(egui::include_image!(
-            "../assets/revealed_mine.png"
-        )))
-    }
-
-    fn incorrect_flag() -> Image<'static> {
-        Self::pixelate(Image::new(egui::include_image!(
-            "../assets/incorrect_flag.png"
-        )))
+                    self.mine_counter(ui)
+                })
+                .inner
+            })
+            .inner
     }
 }
 
 impl Widget for &mut Minesweeper {
     fn ui(self, ui: &mut Ui) -> Response {
-        let screen_rect = ui.available_rect_before_wrap();
-        let response = ui.allocate_response(screen_rect.size(), egui::Sense::drag());
+        MinesweeperFrame::new(3)
+            .floating()
+            .margin(Margin::same(6.0))
+            .show(ui, |ui| {
+                self.header(ui);
 
-        let size = Vec2::from(self.size());
-
-        let screen_ratio = screen_rect.aspect_ratio();
-        let board_ratio = size.x / size.y;
-
-        let resized = screen_rect.size()
-            * vec2(
-                (1.0 / (screen_ratio * board_ratio)).min(1.0),
-                (screen_ratio * board_ratio).min(1.0),
-            );
-
-        let adjusted_rect = Rect::from_min_size(
-            screen_rect.min + vec2((screen_rect.size().x - resized.x).max(0.0) / 2.0, 0.0),
-            resized,
-        );
-
-        let c2s = RectTransform::from_to(
-            Rect::from_min_size(Pos2::ZERO, self.size().into()),
-            adjusted_rect,
-        );
-
-        let mut pressed = None;
-
-        for y in 0..self.board.height {
-            for x in 0..self.board.width {
-                let rect = Rect::from_min_size(
-                    c2s * pos2(x as f32 * 16.0, y as f32 * 16.0),
-                    c2s.scale() * vec2(16.0, 16.0),
-                );
-
-                let response = ui.interact(rect, response.id.with((x, y)), Sense::click());
-
-                if response.contains_pointer() {
-                    if ui.input(|i| i.pointer.primary_down()) {
-                        pressed = Some((x, y));
-                    }
-
-                    if ui.input(|i| i.pointer.primary_released()) {
-                        self.open_cell(x as usize, y as usize);
-                    } else if ui.input(|i| i.pointer.secondary_released()) {
-                        self.toggle_flag(x as usize, y as usize);
-                    }
-                }
-            }
-        }
-
-        for y in 0..self.board.height {
-            for x in 0..self.board.width {
-                let rect = Rect::from_min_size(
-                    c2s * pos2(x as f32 * 16.0, y as f32 * 16.0),
-                    c2s.scale() * vec2(16.0, 16.0),
-                );
-
-                let cell = &self.board.cells[y * self.board.width + x];
-
-                let image = match (cell.state, cell.kind) {
-                    (CellState::Opened, CellKind::Mine) => Minesweeper::opened_mine(),
-                    (CellState::Opened, CellKind::Empty) => {
-                        Minesweeper::opened_cell(self.board.count_mines(x, y))
-                    }
-
-                    (CellState::Flagged, CellKind::Empty) if self.game_over => {
-                        Minesweeper::incorrect_flag()
-                    }
-                    (CellState::Flagged, _) => Minesweeper::flag_cell(),
-
-                    _ if pressed
-                        .map(|(px, py)| {
-                            (px == x && py == y)
-                                || self.board.cells[py * self.board.width + px].state
-                                    == CellState::Opened
-                                    && x.abs_diff(px) <= 1
-                                    && y.abs_diff(py) <= 1
-                        })
-                        .unwrap_or(false) =>
-                    {
-                        Minesweeper::empty_cell()
-                    }
-                    (CellState::Hidden, CellKind::Mine) if self.game_over => {
-                        Minesweeper::revealed_mine()
-                    }
-                    (CellState::Hidden, _) => Minesweeper::hidden_cell(),
-                };
-
-                image.paint_at(ui, rect);
-            }
-        }
-
-        response
+                MinesweeperFrame::new(3)
+                    .show(ui, |ui| {
+                        ui.add(&mut self.board)
+                        // self.canvas.show(ui, |ui| ui.add(&mut self.board)).inner
+                    })
+                    .inner
+            })
+            .inner
     }
 }
 
 impl eframe::App for Minesweeper {
     fn update(&mut self, ctx: &eframe::egui::Context, _: &mut eframe::Frame) {
-        eframe::egui::CentralPanel::default().show(ctx, |ui| {
-            self.ui(ui);
+        ctx.set_pixels_per_point(4.0);
+        ctx.tessellation_options_mut(|mut opts| {
+            opts.feathering = false;
         });
+        eframe::egui::CentralPanel::default()
+            .frame(Frame::none())
+            .show(ctx, |ui| {
+                self.ui(ui);
+            });
     }
 }

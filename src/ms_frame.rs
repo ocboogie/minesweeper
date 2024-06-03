@@ -6,7 +6,7 @@ use egui::{
 };
 use once_cell::sync::Lazy;
 
-const SHADOW_COLOR: Color32 = Color32::from_rgb(128, 128, 128);
+pub const SHADOW_COLOR: Color32 = Color32::from_rgb(128, 128, 128);
 const HIGHTLIGHT_COLOR: Color32 = Color32::WHITE;
 const BACKGROUND_COLOR: Color32 = Color32::from_rgb(192, 192, 192);
 

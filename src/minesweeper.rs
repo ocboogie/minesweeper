@@ -180,6 +180,13 @@ impl Minesweeper {
 
 impl Widget for &mut Minesweeper {
     fn ui(self, ui: &mut Ui) -> Response {
+        // return self
+        //     .canvas
+        //     .show(ui, vec2(100.0, 50.0), |ui| {
+        //         ui.button("Hello World");
+        //     })
+        //     .response;
+
         MinesweeperFrame::new(3)
             .floating()
             .margin(Margin::same(6.0))
@@ -188,8 +195,13 @@ impl Widget for &mut Minesweeper {
 
                 MinesweeperFrame::new(3)
                     .show(ui, |ui| {
-                        ui.add(&mut self.board)
-                        // self.canvas.show(ui, |ui| ui.add(&mut self.board)).inner
+                        // ui.add(&mut self.board)
+                        self.canvas
+                            .show(ui, self.board.size().into(), |ui| {
+                                // ui.button("Hello World")
+                                ui.add(&mut self.board)
+                            })
+                            .inner
                     })
                     .inner
             })

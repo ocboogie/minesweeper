@@ -131,61 +131,47 @@ impl BoardUI {
 
 impl Widget for &mut BoardUI {
     fn ui(self, ui: &mut Ui) -> Response {
-        let screen_rect = ui.available_rect_before_wrap();
-        let response = ui.allocate_response(screen_rect.size(), egui::Sense::drag());
+        let screen_bounds = ui.available_rect_before_wrap();
 
-        let size = Vec2::from(self.size());
-
-        let screen_ratio = screen_rect.aspect_ratio();
-        let board_ratio = size.x / size.y;
-
-        let resized = screen_rect.size()
-            * vec2(
-                (1.0 / (screen_ratio * board_ratio)).min(1.0),
-                (screen_ratio * board_ratio).min(1.0),
-            );
-
-        let adjusted_rect = Rect::from_min_size(
-            screen_rect.min + vec2((screen_rect.size().x - resized.x).max(0.0) / 2.0, 0.0),
-            resized,
-        );
-
-        let c2s = RectTransform::from_to(
+        let board_to_screen = RectTransform::from_to(
             Rect::from_min_size(Pos2::ZERO, self.size().into()),
-            adjusted_rect,
+            screen_bounds,
         );
+
+        let (_, response) =
+            ui.allocate_exact_size(screen_bounds.size(), Sense::focusable_noninteractive());
 
         let mut pressed = None;
 
         for y in 0..self.board.height {
             for x in 0..self.board.width {
-                let rect = Rect::from_min_size(
-                    c2s * pos2(x as f32 * 16.0, y as f32 * 16.0),
-                    c2s.scale() * vec2(16.0, 16.0),
-                );
+                let rect = board_to_screen.transform_rect(Rect::from_min_size(
+                    pos2(x as f32 * 16.0, y as f32 * 16.0),
+                    vec2(16.0, 16.0),
+                ));
 
                 let response = ui.interact(rect, response.id.with((x, y)), Sense::click());
 
-                if response.contains_pointer() {
+                if response.is_pointer_button_down_on() {
                     if ui.input(|i| i.pointer.primary_down()) {
                         pressed = Some((x, y));
                     }
+                }
 
-                    if ui.input(|i| i.pointer.primary_released()) {
-                        self.open_cell(x as usize, y as usize);
-                    } else if ui.input(|i| i.pointer.secondary_released()) {
-                        self.toggle_flag(x as usize, y as usize);
-                    }
+                if response.clicked() {
+                    self.open_cell(x as usize, y as usize);
+                } else if response.secondary_clicked() || response.long_touched() {
+                    self.toggle_flag(x as usize, y as usize);
                 }
             }
         }
 
         for y in 0..self.board.height {
             for x in 0..self.board.width {
-                let rect = Rect::from_min_size(
-                    c2s * pos2(x as f32 * 16.0, y as f32 * 16.0),
-                    c2s.scale() * vec2(16.0, 16.0),
-                );
+                let rect = board_to_screen.transform_rect(Rect::from_min_size(
+                    pos2(x as f32 * 16.0, y as f32 * 16.0),
+                    vec2(16.0, 16.0),
+                ));
 
                 let cell = &self.board.cells[y * self.board.width + x];
 

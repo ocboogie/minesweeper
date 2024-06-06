@@ -4,8 +4,8 @@ use crate::canvas::Canvas;
 use crate::load_image;
 use crate::ms_frame::MinesweeperFrame;
 use crate::{
-    board::{Board, CellKind, CellState},
-    board_ui::BoardUI,
+    board::Board,
+    minefield::{CellKind, CellState, Minefield},
 };
 use eframe::{
     egui::{Image, Sense, Ui, Widget},
@@ -21,7 +21,7 @@ const DIGITS_IN_COUNTERS: usize = 3;
 const FACE_SIZE: f32 = 24.0;
 
 pub struct Minesweeper {
-    pub board: BoardUI,
+    pub board: Board,
     pub canvas: Canvas,
     pub mines: usize,
     pub start: Instant,
@@ -66,7 +66,7 @@ impl Minesweeper {
 
     pub fn new(width: usize, height: usize, mines: usize) -> Self {
         Minesweeper {
-            board: BoardUI::new(width, height, mines),
+            board: Board::new(width, height, mines),
             mines,
             canvas: Canvas::new(),
             start: Instant::now(),
@@ -113,7 +113,7 @@ impl Minesweeper {
     pub fn mine_counter(&self, ui: &mut Ui) -> Response {
         let mines = self
             .board
-            .board
+            .minefield
             .cells
             .iter()
             .filter(|cell| cell.kind == CellKind::Mine && cell.state == CellState::Hidden)
@@ -162,9 +162,9 @@ impl Minesweeper {
                     ui.add_space(((ui.available_width() - counter_size) / 2.0) - FACE_SIZE / 2.0);
 
                     if self.face(ui).clicked() {
-                        self.board = BoardUI::new(
-                            self.board.board.width,
-                            self.board.board.height,
+                        self.board = Board::new(
+                            self.board.minefield.width,
+                            self.board.minefield.height,
                             self.mines,
                         );
                         self.start = Instant::now();

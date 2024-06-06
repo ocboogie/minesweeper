@@ -1,8 +1,8 @@
 use egui::{Image, ImageSource, TextureOptions};
 
 mod board;
-mod board_ui;
 mod canvas;
+mod minefield;
 mod minesweeper;
 mod ms_frame;
 

@@ -19,6 +19,7 @@ pub struct Cell {
     pub state: CellState,
 }
 
+#[derive(Clone, Debug)]
 pub struct Minefield {
     pub cells: Vec<Cell>,
     pub width: usize,
@@ -105,5 +106,75 @@ impl Minefield {
 
                 Some((nx, ny))
             })
+    }
+
+    pub fn format(&self) -> String {
+        let mut s = String::new();
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let cell = &self.cells[y * self.width + x];
+                let c = match (cell.state, cell.kind) {
+                    (CellState::Hidden, CellKind::Empty) => '.',
+                    (CellState::Hidden, CellKind::Mine) => 'm',
+                    (CellState::Opened, CellKind::Empty) => '0',
+                    (CellState::Opened, CellKind::Mine) => 'M',
+                    (CellState::Flagged, CellKind::Empty) => 'f',
+                    (CellState::Flagged, CellKind::Mine) => 'F',
+                };
+                s.push(c);
+            }
+            s.push('\n');
+        }
+
+        s
+    }
+
+    pub fn parse(s: &str) -> Self {
+        let mut cells = Vec::new();
+        let width = s.lines().next().unwrap().len();
+        let mut height = 1;
+
+        for c in s.chars() {
+            let cell = match c {
+                '.' => Cell {
+                    kind: CellKind::Empty,
+                    state: CellState::Hidden,
+                },
+                'm' => Cell {
+                    kind: CellKind::Mine,
+                    state: CellState::Hidden,
+                },
+                '0' => Cell {
+                    kind: CellKind::Empty,
+                    state: CellState::Opened,
+                },
+                'M' => Cell {
+                    kind: CellKind::Mine,
+                    state: CellState::Opened,
+                },
+                'f' => Cell {
+                    kind: CellKind::Empty,
+                    state: CellState::Flagged,
+                },
+                'F' => Cell {
+                    kind: CellKind::Mine,
+                    state: CellState::Flagged,
+                },
+                '\n' => {
+                    height += 1;
+                    continue;
+                }
+                _ => panic!("invalid character: {}", c),
+            };
+
+            cells.push(cell);
+        }
+
+        Minefield {
+            cells,
+            width,
+            height,
+        }
     }
 }

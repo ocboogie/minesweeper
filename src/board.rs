@@ -13,6 +13,15 @@ pub struct Board {
 }
 
 impl Board {
+    pub fn from_minefield(minefield: Minefield) -> Self {
+        Board {
+            minefield,
+            game_over: false,
+            win: false,
+            pressed: false,
+        }
+    }
+
     pub fn new(width: usize, height: usize, mines: usize) -> Self {
         Board {
             minefield: Minefield::generate(width, height, mines),
@@ -20,6 +29,14 @@ impl Board {
             win: false,
             pressed: false,
         }
+    }
+
+    pub fn mines(&self) -> usize {
+        self.minefield
+            .cells
+            .iter()
+            .filter(|cell| cell.kind == CellKind::Mine)
+            .count()
     }
 
     pub fn open_cell(&mut self, x: usize, y: usize) {

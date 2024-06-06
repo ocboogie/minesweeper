@@ -64,6 +64,18 @@ impl Minesweeper {
         ]
     }
 
+    pub fn from_board(board: Board) -> Self {
+        Minesweeper {
+            mines: board.mines(),
+            board,
+            canvas: Canvas::new(),
+            start: Instant::now(),
+            digits: Self::load_digits(),
+            margin_corners: Self::load_margin_corners(),
+            faces: Self::load_faces(),
+        }
+    }
+
     pub fn new(width: usize, height: usize, mines: usize) -> Self {
         Minesweeper {
             board: Board::new(width, height, mines),
@@ -182,6 +194,7 @@ impl Minesweeper {
 
 impl Widget for &mut Minesweeper {
     fn ui(self, ui: &mut Ui) -> Response {
+        eprintln!("{}", self.board.minefield.format());
         // return self
         //     .canvas
         //     .show(ui, vec2(100.0, 50.0), |ui| {

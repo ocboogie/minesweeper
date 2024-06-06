@@ -9,6 +9,7 @@ pub struct BoardUI {
     pub board: Board,
     pub game_over: bool,
     pub win: bool,
+    pub pressed: bool,
 }
 
 impl BoardUI {
@@ -17,6 +18,7 @@ impl BoardUI {
             board: Board::generate(width, height, mines),
             game_over: false,
             win: false,
+            pressed: false,
         }
     }
 
@@ -138,7 +140,7 @@ impl Widget for &mut BoardUI {
             screen_bounds,
         );
 
-        let (_, response) =
+        let (_, mut response) =
             ui.allocate_exact_size(screen_bounds.size(), Sense::focusable_noninteractive());
 
         let mut pressed = None;
@@ -150,21 +152,25 @@ impl Widget for &mut BoardUI {
                     vec2(16.0, 16.0),
                 ));
 
-                let response = ui.interact(rect, response.id.with((x, y)), Sense::click());
+                let cell_response = ui.interact(rect, response.id.with((x, y)), Sense::click());
 
-                if response.is_pointer_button_down_on() {
+                if cell_response.is_pointer_button_down_on() {
                     if ui.input(|i| i.pointer.primary_down()) {
                         pressed = Some((x, y));
                     }
                 }
 
-                if response.clicked() {
+                if cell_response.clicked() {
                     self.open_cell(x as usize, y as usize);
-                } else if response.secondary_clicked() || response.long_touched() {
+                } else if cell_response.secondary_clicked() || cell_response.long_touched() {
                     self.toggle_flag(x as usize, y as usize);
                 }
+
+                response = response.union(cell_response);
             }
         }
+
+        self.pressed = pressed.is_some();
 
         for y in 0..self.board.height {
             for x in 0..self.board.width {

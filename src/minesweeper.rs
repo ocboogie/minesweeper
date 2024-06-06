@@ -134,6 +134,8 @@ impl Minesweeper {
                     &self.faces[3]
                 } else if self.board.game_over {
                     &self.faces[4]
+                } else if self.board.pressed {
+                    &self.faces[2]
                 } else {
                     &self.faces[0]
                 };
@@ -197,10 +199,7 @@ impl Widget for &mut Minesweeper {
                     .show(ui, |ui| {
                         // ui.add(&mut self.board)
                         self.canvas
-                            .show(ui, self.board.size().into(), |ui| {
-                                // ui.button("Hello World")
-                                ui.add(&mut self.board)
-                            })
+                            .show(ui, self.board.size().into(), |ui| ui.add(&mut self.board))
                             .inner
                     })
                     .inner

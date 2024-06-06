@@ -7,6 +7,7 @@ mod canvas;
 mod minefield;
 mod minesweeper;
 mod ms_frame;
+mod solver;
 
 pub fn load_image(src: ImageSource) -> Image<'_> {
     Image::new(src)
@@ -17,17 +18,7 @@ pub fn load_image(src: ImageSource) -> Image<'_> {
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-    // let game = minesweeper::Minesweeper::new(4, 4, 2);
-    let mf = Minefield::parse(
-        r#"000m
-000.
-000.
-00F."#,
-    );
-    dbg!(mf.width);
-    dbg!(mf.height);
-    let game = minesweeper::Minesweeper::from_board(Board::from_minefield(mf));
-    // let game = minesweeper::Minesweeper::new(16, 16, 40);
+    let game = minesweeper::Minesweeper::new(50, 50, 390);
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size(game.board.size()),

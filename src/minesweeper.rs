@@ -3,6 +3,7 @@ use std::{f32::consts::PI, time::Instant};
 use crate::canvas::Canvas;
 use crate::load_image;
 use crate::ms_frame::MinesweeperFrame;
+use crate::solver::{generate_guessfree, solve_step};
 use crate::{
     board::Board,
     minefield::{CellKind, CellState, Minefield},
@@ -25,6 +26,7 @@ pub struct Minesweeper {
     pub canvas: Canvas,
     pub mines: usize,
     pub start: Instant,
+    pub started: bool,
 
     pub digits: [Image<'static>; 10],
     pub margin_corners: [Image<'static>; 2],
@@ -70,6 +72,7 @@ impl Minesweeper {
             board,
             canvas: Canvas::new(),
             start: Instant::now(),
+            started: true,
             digits: Self::load_digits(),
             margin_corners: Self::load_margin_corners(),
             faces: Self::load_faces(),
@@ -78,10 +81,11 @@ impl Minesweeper {
 
     pub fn new(width: usize, height: usize, mines: usize) -> Self {
         Minesweeper {
-            board: Board::new(width, height, mines),
+            board: Board::from_minefield(Minefield::full(width, height)),
             mines,
             canvas: Canvas::new(),
             start: Instant::now(),
+            started: false,
             digits: Self::load_digits(),
             margin_corners: Self::load_margin_corners(),
             faces: Self::load_faces(),
@@ -174,12 +178,7 @@ impl Minesweeper {
                     ui.add_space(((ui.available_width() - counter_size) / 2.0) - FACE_SIZE / 2.0);
 
                     if self.face(ui).clicked() {
-                        self.board = Board::new(
-                            self.board.minefield.width,
-                            self.board.minefield.height,
-                            self.mines,
-                        );
-                        self.start = Instant::now();
+                        self.reset();
                     }
 
                     ui.add_space(ui.available_width() - counter_size);
@@ -190,19 +189,30 @@ impl Minesweeper {
             })
             .inner
     }
+
+    fn reset(&mut self) {
+        self.board = Board::from_minefield(Minefield::full(
+            self.board.minefield.width,
+            self.board.minefield.height,
+        ));
+        self.started = false;
+    }
+
+    fn start(&mut self, start: usize) {
+        self.board = Board::from_minefield(generate_guessfree(
+            start,
+            self.board.minefield.width,
+            self.board.minefield.height,
+            self.mines,
+        ));
+        self.start = Instant::now();
+        self.started = true;
+    }
 }
 
 impl Widget for &mut Minesweeper {
     fn ui(self, ui: &mut Ui) -> Response {
-        eprintln!("{}", self.board.minefield.format());
-        // return self
-        //     .canvas
-        //     .show(ui, vec2(100.0, 50.0), |ui| {
-        //         ui.button("Hello World");
-        //     })
-        //     .response;
-
-        MinesweeperFrame::new(3)
+        let response = MinesweeperFrame::new(3)
             .floating()
             .margin(Margin::same(6.0))
             .show(ui, |ui| {
@@ -210,21 +220,39 @@ impl Widget for &mut Minesweeper {
 
                 MinesweeperFrame::new(3)
                     .show(ui, |ui| {
-                        // ui.add(&mut self.board)
                         self.canvas
                             .show(ui, self.board.size().into(), |ui| ui.add(&mut self.board))
                             .inner
                     })
                     .inner
             })
-            .inner
+            .inner;
+
+        if !self.started {
+            if let Some((idx, _)) = self
+                .board
+                .minefield
+                .cells
+                .iter()
+                .enumerate()
+                .find(|(_, cell)| cell.state == CellState::Opened)
+            {
+                self.start(idx);
+            }
+        }
+
+        if ui.input(|i| i.key_pressed(egui::Key::Space)) {
+            self.board.minefield = solve_step(self.board.minefield.clone())
+        }
+
+        response
     }
 }
 
 impl eframe::App for Minesweeper {
     fn update(&mut self, ctx: &eframe::egui::Context, _: &mut eframe::Frame) {
         ctx.set_pixels_per_point(4.0);
-        ctx.tessellation_options_mut(|mut opts| {
+        ctx.tessellation_options_mut(|opts| {
             opts.feathering = false;
         });
         eframe::egui::CentralPanel::default()

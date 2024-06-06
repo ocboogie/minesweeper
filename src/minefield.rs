@@ -19,7 +19,7 @@ pub struct Cell {
     pub state: CellState,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Minefield {
     pub cells: Vec<Cell>,
     pub width: usize,
@@ -27,6 +27,20 @@ pub struct Minefield {
 }
 
 impl Minefield {
+    pub fn full(width: usize, height: usize) -> Self {
+        Minefield {
+            cells: (0..width * height)
+                .into_iter()
+                .map(|_| Cell {
+                    kind: CellKind::Mine,
+                    state: CellState::Hidden,
+                })
+                .collect::<Vec<_>>(),
+            width,
+            height,
+        }
+    }
+
     pub fn generate(width: usize, height: usize, mines: usize) -> Self {
         assert!(mines < width * height);
 
@@ -70,6 +84,28 @@ impl Minefield {
                 .collect(),
             width,
             height,
+        }
+    }
+
+    pub fn open(&mut self, x: usize, y: usize) {
+        let cell = &self.cells[y * self.width + x];
+
+        if cell.state == CellState::Opened {
+            return;
+        }
+
+        self.cells[y * self.width + x].state = CellState::Opened;
+
+        let mines = self.count_mines(x, y);
+
+        if mines != 0 {
+            return;
+        }
+
+        for (x, y) in self.neighbors(x, y) {
+            if self.cells[y * self.width + x].state == CellState::Hidden {
+                self.open(x, y);
+            }
         }
     }
 
@@ -176,5 +212,12 @@ impl Minefield {
             width,
             height,
         }
+    }
+
+    pub fn is_solved(&self) -> bool {
+        self.cells.iter().all(|cell| {
+            (cell.kind == CellKind::Empty && cell.state == CellState::Opened)
+                || (cell.kind == CellKind::Mine && cell.state != CellState::Hidden)
+        })
     }
 }

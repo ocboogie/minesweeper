@@ -60,21 +60,12 @@ impl Board {
             return;
         }
 
-        cell.state = CellState::Opened;
-
         if cell.kind == CellKind::Mine {
+            cell.state = CellState::Opened;
             self.game_over = true;
         }
 
-        if mines != 0 {
-            return;
-        }
-
-        for (x, y) in self.minefield.neighbors(x, y) {
-            if self.minefield.cells[y * self.minefield.width + x].state == CellState::Hidden {
-                self.open_cell(x, y);
-            }
-        }
+        self.minefield.open(x, y);
     }
 
     pub fn toggle_flag(&mut self, x: usize, y: usize) {

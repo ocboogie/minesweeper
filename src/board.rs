@@ -72,7 +72,10 @@ impl Board {
         cell.state = match cell.state {
             CellState::Hidden => CellState::Flagged,
             CellState::Flagged => CellState::Hidden,
-            CellState::Opened => unreachable!(),
+            CellState::Opened => {
+                log::warn!("test1");
+                unreachable!()
+            }
         };
     }
 
@@ -94,7 +97,10 @@ impl Board {
             6 => egui::include_image!("../assets/6.png"),
             7 => egui::include_image!("../assets/7.png"),
             8 => egui::include_image!("../assets/8.png"),
-            _ => unreachable!(),
+            _ => {
+                log::warn!("test2");
+                unreachable!()
+            }
         }))
     }
 

@@ -6,6 +6,7 @@ mod ms_frame;
 mod solver;
 mod utils;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
@@ -26,10 +27,28 @@ fn main() -> Result<(), eframe::Error> {
             Box::new(game)
         }),
     )
+}
 
-    // eframe::run_simple_native("Minesweeper", options, move |ctx, _frame| {
-    //     egui::CentralPanel::default().show(ctx, move |ui| {
-    //         game.ui(ui);
-    //     });
-    // })
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    let web_options = eframe::WebOptions::default();
+
+    let game = minesweeper::Minesweeper::new(10, 10, 16);
+
+    wasm_bindgen_futures::spawn_local(async {
+        eframe::WebRunner::new()
+            .start(
+                "the_canvas_id", // hardcode it
+                web_options,
+                Box::new(|cc| {
+                    egui_extras::install_image_loaders(&cc.egui_ctx);
+
+                    Box::new(game)
+                }),
+            )
+            .await
+            .expect("failed to start eframe");
+    });
 }

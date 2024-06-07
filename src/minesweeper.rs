@@ -1,4 +1,4 @@
-use std::time::Instant;
+use web_time::Instant;
 
 use crate::canvas::Canvas;
 use crate::ms_frame::MinesweeperFrame;

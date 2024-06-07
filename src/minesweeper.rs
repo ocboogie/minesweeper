@@ -1,9 +1,9 @@
 use std::{f32::consts::PI, time::Instant};
 
 use crate::canvas::Canvas;
-use crate::load_image;
 use crate::ms_frame::MinesweeperFrame;
 use crate::solver::{generate_guessfree, solve_step};
+use crate::utils::load_image;
 use crate::{
     board::Board,
     minefield::{CellKind, CellState, Minefield},
@@ -17,6 +17,7 @@ use egui::{
     Frame, ImageSource, InnerResponse, Layout, Margin, Pos2, Response, Shape, Stroke,
     TextureOptions, Vec2,
 };
+use log::info;
 
 const DIGITS_IN_COUNTERS: usize = 3;
 const FACE_SIZE: f32 = 24.0;
@@ -207,6 +208,11 @@ impl Minesweeper {
         ));
         self.start = Instant::now();
         self.started = true;
+
+        info!(
+            "Started game with minefield: \n{}",
+            self.board.minefield.format()
+        );
     }
 }
 

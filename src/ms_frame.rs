@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use crate::load_image;
+use crate::utils::load_image;
 use egui::{
     include_image, pos2, Color32, Image, InnerResponse, Margin, Rect, Sense, Shape, Ui, Vec2,
 };

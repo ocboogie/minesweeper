@@ -1,14 +1,11 @@
-use std::{collections::HashSet, iter::once};
+use std::iter::once;
 
 use peroxide::{
     fuga::{LinearAlgebra, Shape},
-    structure::{matrix::matrix, sparse::SPMatrix},
+    structure::matrix::matrix,
 };
 
-use crate::{
-    board::Board,
-    minefield::{CellKind, CellState, Minefield},
-};
+use crate::minefield::{CellKind, CellState, Minefield};
 
 pub fn solve_step(mut minefield: Minefield) -> Minefield {
     let mf_height = minefield.height;
@@ -46,19 +43,17 @@ pub fn solve_step(mut minefield: Minefield) -> Minefield {
                 }
             });
 
-            let value = mines as f64 - minefield.count_flags(x, y) as f64;
+            let value = mines as f32 - minefield.count_flags(x, y) as f32;
 
             neighbor_mask.chain(once(value))
         })
-        .collect::<Vec<f64>>();
+        .collect::<Vec<f32>>();
 
     let matrix_width = inner_matrix.len() / matrix_height;
 
     let matrix = matrix(inner_matrix, matrix_height, matrix_width, Shape::Row);
-    // eprintln!("Matrix: \n{}", matrix);
 
     let reduced = matrix.rref();
-    // eprintln!("RREF: \n{}", reduced);
 
     for row in reduced.data.chunks(matrix_width) {
         let mut upper_bound: isize = 0;
@@ -114,8 +109,13 @@ pub fn solve(minefield: &Minefield) -> Minefield {
 }
 
 pub fn generate_guessfree(start: usize, width: usize, height: usize, mines: usize) -> Minefield {
+    let mut n = 0;
+
     loop {
         let mut minefield = Minefield::generate(width, height, mines);
+        n += 1;
+
+        eprintln!("Attempt {}", n);
 
         if minefield.cells[start].kind == CellKind::Mine {
             continue;

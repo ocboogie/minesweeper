@@ -7,27 +7,21 @@ use egui::{emath::RectTransform, pos2, Pos2, Response, TextureOptions};
 
 pub struct Board {
     pub minefield: Minefield,
-    pub game_over: bool,
-    pub win: bool,
-    pub pressed: bool,
+    pub pressed: Option<(usize, usize)>,
 }
 
 impl Board {
     pub fn from_minefield(minefield: Minefield) -> Self {
         Board {
             minefield,
-            game_over: false,
-            win: false,
-            pressed: false,
+            pressed: None,
         }
     }
 
     pub fn new(width: usize, height: usize, mines: usize) -> Self {
         Board {
             minefield: Minefield::generate(width, height, mines),
-            game_over: false,
-            win: false,
-            pressed: false,
+            pressed: None,
         }
     }
 
@@ -40,7 +34,7 @@ impl Board {
     }
 
     pub fn open_cell(&mut self, x: usize, y: usize) {
-        if self.game_over {
+        if self.minefield.is_lost() || self.minefield.is_solved() {
             return;
         }
 
@@ -62,14 +56,13 @@ impl Board {
 
         if cell.kind == CellKind::Mine {
             cell.state = CellState::Opened;
-            self.game_over = true;
         }
 
         self.minefield.open(x, y);
     }
 
     pub fn toggle_flag(&mut self, x: usize, y: usize) {
-        if self.game_over {
+        if self.minefield.is_lost() {
             return;
         }
         let cell = &mut self.minefield.cells[y * self.minefield.width + x];
@@ -152,7 +145,7 @@ impl Widget for &mut Board {
         let (_, mut response) =
             ui.allocate_exact_size(screen_bounds.size(), Sense::focusable_noninteractive());
 
-        let mut pressed = None;
+        self.pressed = None;
 
         for y in 0..self.minefield.height {
             for x in 0..self.minefield.width {
@@ -165,7 +158,7 @@ impl Widget for &mut Board {
 
                 if cell_response.is_pointer_button_down_on() {
                     if ui.input(|i| i.pointer.primary_down()) {
-                        pressed = Some((x, y));
+                        self.pressed = Some((x, y));
                     }
                 }
 
@@ -179,7 +172,8 @@ impl Widget for &mut Board {
             }
         }
 
-        self.pressed = pressed.is_some();
+        let is_lost = self.minefield.is_lost();
+        let is_solved = self.minefield.is_solved();
 
         for y in 0..self.minefield.height {
             for x in 0..self.minefield.width {
@@ -196,12 +190,11 @@ impl Widget for &mut Board {
                         Board::opened_cell(self.minefield.count_mines(x, y))
                     }
 
-                    (CellState::Flagged, CellKind::Empty) if self.game_over => {
-                        Board::incorrect_flag()
-                    }
+                    (CellState::Flagged, CellKind::Empty) if is_lost => Board::incorrect_flag(),
                     (CellState::Flagged, _) => Board::flag_cell(),
 
-                    _ if pressed
+                    _ if self
+                        .pressed
                         .map(|(px, py)| {
                             (px == x && py == y)
                                 || self.minefield.cells[py * self.minefield.width + px].state
@@ -213,7 +206,8 @@ impl Widget for &mut Board {
                     {
                         Board::empty_cell()
                     }
-                    (CellState::Hidden, CellKind::Mine) if self.game_over => Board::revealed_mine(),
+                    (CellState::Hidden, CellKind::Mine) if is_lost => Board::revealed_mine(),
+                    (CellState::Hidden, CellKind::Mine) if is_solved => Board::flag_cell(),
                     (CellState::Hidden, _) => Board::hidden_cell(),
                 };
 

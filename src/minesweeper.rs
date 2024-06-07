@@ -20,7 +20,9 @@ pub struct Minesweeper {
     pub canvas: Canvas,
     pub mines: usize,
     pub start: Instant,
+    pub finished: Option<Instant>,
     pub started: bool,
+    pub last_pressed: Option<(usize, usize)>,
 
     pub digits: [Image<'static>; 10],
     pub margin_corners: [Image<'static>; 2],
@@ -66,7 +68,9 @@ impl Minesweeper {
             board,
             canvas: Canvas::new(),
             start: Instant::now(),
+            finished: None,
             started: true,
+            last_pressed: None,
             digits: Self::load_digits(),
             margin_corners: Self::load_margin_corners(),
             faces: Self::load_faces(),
@@ -75,26 +79,18 @@ impl Minesweeper {
 
     pub fn new(width: usize, height: usize, mines: usize) -> Self {
         Minesweeper {
-            board: Board::from_minefield(Minefield::full(width, height)),
+            board: Board::from_minefield(Minefield::new(width, height)),
             mines,
             canvas: Canvas::new(),
             start: Instant::now(),
+            finished: None,
             started: false,
+            last_pressed: None,
             digits: Self::load_digits(),
             margin_corners: Self::load_margin_corners(),
             faces: Self::load_faces(),
         }
     }
-
-    // pub fn minesweeper_frame<R>(
-    //     &self,
-    //     ui: &mut Ui,
-    //     margin: Margin,
-    //     border: usize,
-    //     protruded: bool,
-    //     add_contents: impl FnOnce(&mut Ui) -> R,
-    // ) -> InnerResponse<R> {
-    // }
 
     pub fn counter(&self, ui: &mut Ui, number: usize) -> Response {
         MinesweeperFrame::new(1)
@@ -116,7 +112,16 @@ impl Minesweeper {
     }
 
     pub fn time_counter(&self, ui: &mut Ui) -> Response {
-        let secs: usize = self.start.elapsed().as_secs().try_into().unwrap();
+        let secs: usize = match self.finished {
+            _ if !self.started => 0,
+            Some(finished) => finished
+                .duration_since(self.start)
+                .as_secs()
+                .try_into()
+                .unwrap(),
+            None => self.start.elapsed().as_secs().try_into().unwrap(),
+        };
+
         self.counter(ui, secs)
     }
 
@@ -140,11 +145,11 @@ impl Minesweeper {
 
                 let face = if response.is_pointer_button_down_on() {
                     &self.faces[1]
-                } else if self.board.win {
+                } else if self.board.minefield.is_solved() {
                     &self.faces[3]
-                } else if self.board.game_over {
+                } else if self.board.minefield.is_lost() {
                     &self.faces[4]
-                } else if self.board.pressed {
+                } else if self.board.pressed.is_some() {
                     &self.faces[2]
                 } else {
                     &self.faces[0]
@@ -185,11 +190,13 @@ impl Minesweeper {
     }
 
     fn reset(&mut self) {
-        self.board = Board::from_minefield(Minefield::full(
+        self.board = Board::from_minefield(Minefield::new(
             self.board.minefield.width,
             self.board.minefield.height,
         ));
+        // self.board = Board::new(self.board.minefield.width, self.board.minefield.width, 1);
         self.started = false;
+        self.finished = None;
     }
 
     fn start(&mut self, start: usize) {
@@ -227,17 +234,17 @@ impl Widget for &mut Minesweeper {
             })
             .inner;
 
-        if !self.started {
-            if let Some((idx, _)) = self
-                .board
-                .minefield
-                .cells
-                .iter()
-                .enumerate()
-                .find(|(_, cell)| cell.state == CellState::Opened)
-            {
-                self.start(idx);
+        if !self.started && response.clicked() {
+            if let Some((x, y)) = self.last_pressed {
+                self.start(y * self.board.minefield.width + x);
             }
+        }
+
+        self.last_pressed = self.board.pressed;
+
+        if self.board.minefield.is_solved() && self.finished.is_none() {
+            self.finished = Some(Instant::now());
+            dbg!();
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::Space)) {

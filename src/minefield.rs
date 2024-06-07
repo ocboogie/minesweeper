@@ -217,7 +217,13 @@ impl Minefield {
     pub fn is_solved(&self) -> bool {
         self.cells.iter().all(|cell| {
             (cell.kind == CellKind::Empty && cell.state == CellState::Opened)
-                || (cell.kind == CellKind::Mine && cell.state != CellState::Hidden)
+                || (cell.kind == CellKind::Mine && cell.state != CellState::Opened)
         })
+    }
+
+    pub fn is_lost(&self) -> bool {
+        self.cells
+            .iter()
+            .any(|cell| (cell.kind == CellKind::Mine && cell.state == CellState::Opened))
     }
 }

@@ -1,4 +1,5 @@
 use crate::minefield::{CellKind, CellState, Minefield};
+use log::warn;
 use peroxide::{
     fuga::{LinearAlgebra, Shape},
     structure::matrix::matrix,
@@ -9,12 +10,12 @@ pub fn solve_step(mut minefield: Minefield) -> Minefield {
     let mf_height = minefield.height;
     let mf_width = minefield.width;
 
-    let mut matrix_height = 0;
-
     let hidden_cells = (0..(mf_height * mf_width))
         .into_iter()
         .filter(|idx| minefield.cells[*idx].state == CellState::Hidden)
         .collect::<Vec<_>>();
+
+    let mut matrix_height = 0;
 
     let inner_matrix = (0..mf_height)
         .flat_map(move |dy| (0..mf_width).map(move |dx| (dx, dy)))
@@ -46,6 +47,11 @@ pub fn solve_step(mut minefield: Minefield) -> Minefield {
             neighbor_mask.chain(once(value))
         })
         .collect::<Vec<f32>>();
+
+    if matrix_height == 0 {
+        warn!("No hidden cells to solve");
+        return minefield;
+    }
 
     let matrix_width = inner_matrix.len() / matrix_height;
 

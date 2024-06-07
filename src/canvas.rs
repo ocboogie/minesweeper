@@ -1,22 +1,18 @@
 use egui::{
     emath::{RectTransform, TSTransform},
-    vec2, CursorIcon, Id, InnerResponse, Painter, PointerButton, Pos2, Rect, Response, Ui, Vec2,
+    vec2, InnerResponse, Pos2, Rect, Ui, Vec2,
 };
 
 const MAX_ZOOM: f32 = 10.0;
 
 pub struct Canvas {
     transform: TSTransform,
-
-    last_click_pos_for_zoom: Option<Pos2>,
 }
 
 impl Canvas {
     pub fn new() -> Self {
         Canvas {
             transform: TSTransform::IDENTITY,
-
-            last_click_pos_for_zoom: None,
         }
     }
 

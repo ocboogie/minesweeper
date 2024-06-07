@@ -1,7 +1,3 @@
-use board::Board;
-use egui::{Image, ImageSource, TextureOptions};
-use minefield::Minefield;
-
 mod board;
 mod canvas;
 mod minefield;

@@ -3,7 +3,7 @@ use eframe::{
     egui::{Image, Sense, Ui, Widget},
     epaint::{vec2, Rect},
 };
-use egui::{emath::RectTransform, pos2, Pos2, Response, TextureOptions, Vec2};
+use egui::{emath::RectTransform, pos2, Pos2, Response, TextureOptions};
 
 pub struct Board {
     pub minefield: Minefield,

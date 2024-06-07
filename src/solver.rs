@@ -1,11 +1,9 @@
-use std::iter::once;
-
+use crate::minefield::{CellKind, CellState, Minefield};
 use peroxide::{
     fuga::{LinearAlgebra, Shape},
     structure::matrix::matrix,
 };
-
-use crate::minefield::{CellKind, CellState, Minefield};
+use std::iter::once;
 
 pub fn solve_step(mut minefield: Minefield) -> Minefield {
     let mf_height = minefield.height;

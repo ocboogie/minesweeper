@@ -1,10 +1,9 @@
-use std::f32::consts::PI;
-
 use crate::utils::load_image;
 use egui::{
     include_image, pos2, Color32, Image, InnerResponse, Margin, Rect, Sense, Shape, Ui, Vec2,
 };
 use once_cell::sync::Lazy;
+use std::f32::consts::PI;
 
 pub const SHADOW_COLOR: Color32 = Color32::from_rgb(128, 128, 128);
 const HIGHTLIGHT_COLOR: Color32 = Color32::WHITE;

@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, time::Instant};
+use std::time::Instant;
 
 use crate::canvas::Canvas;
 use crate::ms_frame::MinesweeperFrame;
@@ -8,15 +8,8 @@ use crate::{
     board::Board,
     minefield::{CellKind, CellState, Minefield},
 };
-use eframe::{
-    egui::{Image, Sense, Ui, Widget},
-    epaint::{vec2, Rect},
-};
-use egui::{
-    emath::RectTransform, epaint::Shadow, include_image, pos2, style::Spacing, Align, Color32,
-    Frame, ImageSource, InnerResponse, Layout, Margin, Pos2, Response, Shape, Stroke,
-    TextureOptions, Vec2,
-};
+use eframe::egui::{Image, Sense, Ui, Widget};
+use egui::{include_image, Align, Frame, Layout, Margin, Response, Vec2};
 use log::info;
 
 const DIGITS_IN_COUNTERS: usize = 3;

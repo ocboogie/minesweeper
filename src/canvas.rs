@@ -3,7 +3,7 @@ use egui::{
     vec2, InnerResponse, Pos2, Rect, Ui, Vec2,
 };
 
-const MAX_ZOOM: f32 = 10.0;
+const MAX_ZOOM: f32 = 4.0;
 
 pub struct Canvas {
     transform: TSTransform,
@@ -40,14 +40,14 @@ impl Canvas {
         let adjusted_bounds = Self::adjusted_bounds(content_size, screen_bounds);
 
         let align_transform = RectTransform::from_to(
-            Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
+            Rect::from_min_size(Pos2::ZERO, content_size),
             adjusted_bounds,
         );
 
         RectTransform::from_to(
-            Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
+            Rect::from_min_size(Pos2::ZERO, content_size),
             align_transform
-                .transform_rect(self.transform * Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0))),
+                .transform_rect(self.transform * Rect::from_min_size(Pos2::ZERO, content_size)),
         )
     }
 
@@ -66,7 +66,8 @@ impl Canvas {
         let transform = self.adjusted_transform(content_size, screen_bounds);
 
         if response.dragged() {
-            self.transform.translation += response.drag_delta() / transform.scale().x;
+            self.transform.translation +=
+                (response.drag_delta() / transform.scale()) * self.transform.scaling;
         }
 
         if let Some(pointer) = ui.ctx().input(|i| i.pointer.hover_pos()) {
@@ -86,7 +87,8 @@ impl Canvas {
                 self.transform.scaling = self.transform.scaling.clamp(1.0, MAX_ZOOM);
 
                 // Pan:
-                self.transform.translation += pan_delta / transform.scale().x;
+                self.transform.translation +=
+                    (pan_delta / transform.scale().x) * self.transform.scaling;
             }
         }
 
@@ -95,11 +97,10 @@ impl Canvas {
         self.transform.translation = self
             .transform
             .translation
-            .max(Vec2::splat(1.0 - self.transform.scaling));
+            .max(content_size * Vec2::splat(1.0 - self.transform.scaling));
 
         let transform = self.adjusted_transform(content_size, screen_bounds);
-        let target_bounds =
-            transform.transform_rect(Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)));
+        let target_bounds = transform.transform_rect(Rect::from_min_size(Pos2::ZERO, content_size));
 
         let mut content_ui = ui.child_ui_with_id_source(target_bounds, *ui.layout(), response.id);
 

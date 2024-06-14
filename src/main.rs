@@ -10,7 +10,7 @@ mod utils;
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-    let game = minesweeper::Minesweeper::new(10, 10, 16);
+    let game = minesweeper::Minesweeper::new(4, 8, 16);
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size(game.board.size()),

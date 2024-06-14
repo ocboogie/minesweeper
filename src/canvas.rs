@@ -20,11 +20,11 @@ impl Canvas {
         let screen_ratio = screen_bounds.aspect_ratio();
         let content_ratio = content_size.x / content_size.y;
 
-        let resized = screen_bounds.size()
-            * vec2(
-                (1.0 / (screen_ratio * content_ratio)).min(1.0),
-                (screen_ratio * content_ratio).min(1.0),
-            );
+        let resized = if screen_ratio > content_ratio {
+            Vec2::splat(screen_bounds.size().y) * vec2(content_ratio, 1.0)
+        } else {
+            Vec2::splat(screen_bounds.size().x) * vec2(1.0, 1.0 / content_ratio)
+        };
 
         Rect::from_min_size(
             screen_bounds.min

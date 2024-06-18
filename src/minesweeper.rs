@@ -22,7 +22,7 @@ pub struct Minesweeper {
     pub start: Instant,
     pub finished: Option<Instant>,
     pub started: bool,
-    pub last_pressed: Option<(usize, usize)>,
+    pub last_pressed: Option<(usize, usize, Instant)>,
 
     pub digits: [Image<'static>; 10],
     pub margin_corners: [Image<'static>; 2],
@@ -226,6 +226,7 @@ impl Widget for &mut Minesweeper {
 
                 MinesweeperFrame::new(3)
                     .show(ui, |ui| {
+                        // ui.add(&mut self.board)
                         self.canvas
                             .show(ui, self.board.size().into(), |ui| ui.add(&mut self.board))
                             .inner
@@ -235,7 +236,7 @@ impl Widget for &mut Minesweeper {
             .inner;
 
         if !self.started && response.clicked() {
-            if let Some((x, y)) = self.last_pressed {
+            if let Some((x, y, _)) = self.last_pressed {
                 self.start(y * self.board.minefield.width + x);
             }
         }

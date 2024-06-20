@@ -2171,6 +2171,7 @@ dependencies = [
  "rand",
  "serde",
  "wasm-bindgen-futures",
+ "web-sys",
  "web-time 1.1.0",
 ]
 

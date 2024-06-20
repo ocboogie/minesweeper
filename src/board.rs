@@ -76,6 +76,17 @@ impl Board {
         }
         let cell = &mut self.minefield.cells[y * self.minefield.width + x];
 
+        if cell.state == CellState::Opened {
+            return;
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let window = web_sys::window().unwrap();
+            let navigator = window.navigator();
+            navigator.vibrate_with_duration(200);
+        }
+
         match cell.state {
             CellState::Hidden => {
                 self.last_flag_toggle = Some((x, y, Instant::now(), true));
@@ -85,7 +96,7 @@ impl Board {
                 self.last_flag_toggle = Some((x, y, Instant::now(), false));
                 cell.state = CellState::Hidden;
             }
-            CellState::Opened => {}
+            CellState::Opened => unreachable!(),
         }
     }
 
@@ -160,7 +171,7 @@ impl Widget for &mut Board {
             screen_bounds,
         );
 
-        let (_, response) = ui.allocate_exact_size(screen_bounds.size(), Sense::click_and_drag());
+        let (_, response) = ui.allocate_exact_size(screen_bounds.size(), Sense::click());
 
         if let Some(pos) = response.interact_pointer_pos() {
             let pos = board_to_screen.inverse().transform_pos(pos);

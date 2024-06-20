@@ -5,10 +5,7 @@ use eframe::{
     egui::{Image, Sense, Ui, Widget},
     epaint::{vec2, Rect},
 };
-use egui::{
-    emath::{RectTransform, TSTransform},
-    pos2, InputState, PointerButton, PointerState, Pos2, Response, TextureOptions, Vec2,
-};
+use egui::{emath::RectTransform, pos2, PointerButton, Pos2, Response, TextureOptions};
 use web_time::Instant;
 
 const FLAGGING_ANIMATION_DURATION: f32 = 0.10;

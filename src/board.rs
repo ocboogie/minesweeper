@@ -77,12 +77,12 @@ impl Board {
             return;
         }
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            let window = web_sys::window().unwrap();
-            let navigator = window.navigator();
-            navigator.vibrate_with_duration(200);
-        }
+        // #[cfg(target_arch = "wasm32")]
+        // {
+        //     let window = web_sys::window().unwrap();
+        //     let navigator = window.navigator();
+        //     navigator.vibrate_with_duration(200);
+        // }
 
         match cell.state {
             CellState::Hidden => {

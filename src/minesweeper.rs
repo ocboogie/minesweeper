@@ -262,6 +262,7 @@ impl eframe::App for Minesweeper {
         ctx.tessellation_options_mut(|opts| {
             opts.feathering = false;
         });
+        ctx.request_repaint();
         eframe::egui::CentralPanel::default()
             .frame(Frame::none())
             .show(ctx, |ui| {

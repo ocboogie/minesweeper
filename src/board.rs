@@ -197,9 +197,7 @@ impl Widget for &mut Board {
             } else if ui.input(|input| input.pointer.button_pressed(PointerButton::Primary)) {
                 self.pressed = Some((x, y, Instant::now()));
             }
-        }
-
-        if ui.input(|input| !input.pointer.button_down(PointerButton::Primary)) {
+        } else {
             self.pressed = None;
         }
 

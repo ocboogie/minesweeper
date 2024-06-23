@@ -4,7 +4,15 @@ use peroxide::{
     fuga::{LinearAlgebra, Shape},
     structure::matrix::matrix,
 };
-use std::iter::once;
+use std::{
+    iter::once,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        mpsc::{channel, sync_channel, Receiver, Sender},
+        Arc,
+    },
+    thread,
+};
 
 pub fn solve_step(mut minefield: Minefield) -> Minefield {
     let mf_height = minefield.height;
@@ -112,14 +120,36 @@ pub fn solve(minefield: &Minefield) -> Minefield {
     }
 }
 
-pub fn generate_guessfree(start: usize, width: usize, height: usize, mines: usize) -> Minefield {
-    let mut n = 0;
+pub struct GuessfreeGenerator {
+    pub attempts: Arc<AtomicU32>,
+    pub board: Receiver<Minefield>,
+    pub cancel: Sender<()>,
+}
 
-    loop {
+pub fn generate_guessfree(
+    start: usize,
+    width: usize,
+    height: usize,
+    mines: usize,
+) -> GuessfreeGenerator {
+    let (tx, rx) = sync_channel(1);
+    let (cancel_tx, cancel_rx) = channel();
+
+    let attempts = Arc::new(AtomicU32::new(0));
+
+    let generator = GuessfreeGenerator {
+        attempts: attempts.clone(),
+        board: rx,
+        cancel: cancel_tx,
+    };
+
+    thread::spawn(move || loop {
+        if cancel_rx.try_recv().is_ok() {
+            return;
+        }
+
         let mut minefield = Minefield::generate(width, height, mines);
-        n += 1;
-
-        eprintln!("Attempt {}", n);
+        attempts.fetch_add(1, Ordering::Relaxed);
 
         if minefield.cells[start].kind == CellKind::Mine {
             continue;
@@ -131,8 +161,11 @@ pub fn generate_guessfree(start: usize, width: usize, height: usize, mines: usiz
             continue;
         }
 
-        return minefield;
-    }
+        let _ = tx.send(minefield);
+        return;
+    });
+
+    generator
 }
 
 #[cfg(test)]

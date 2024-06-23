@@ -226,4 +226,10 @@ impl Minefield {
             .iter()
             .any(|cell| (cell.kind == CellKind::Mine && cell.state == CellState::Opened))
     }
+
+    pub fn reset(&mut self) {
+        for cell in self.cells.iter_mut() {
+            cell.state = CellState::Hidden;
+        }
+    }
 }

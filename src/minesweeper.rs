@@ -261,6 +261,7 @@ impl Minesweeper {
     }
 
     fn reset(&mut self) {
+        self.canvas = Canvas::new();
         self.board = Board::from_minefield(Minefield::new(
             self.board.minefield.width,
             self.board.minefield.height,

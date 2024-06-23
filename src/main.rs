@@ -8,10 +8,10 @@ mod ms_modal;
 mod solver;
 mod utils;
 
+use minesweeper::Minesweeper;
+
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), eframe::Error> {
-    use minesweeper::Minesweeper;
-
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
     // let game = minesweeper::Minesweeper::new(10, 10, 16);

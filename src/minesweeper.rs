@@ -13,7 +13,7 @@ use crate::{
     minefield::{CellKind, CellState, Minefield},
 };
 use eframe::egui::{Image, Sense, Ui, Widget};
-use egui::{include_image, Align, Frame, Label, Layout, Margin, Response, Vec2};
+use egui::{include_image, Align, Color32, Frame, Label, Layout, Margin, Response, Vec2, Visuals};
 use log::info;
 
 const DIGITS_IN_COUNTERS: usize = 3;
@@ -68,7 +68,7 @@ impl Minesweeper {
         ]
     }
 
-    pub fn from_board(board: Board) -> Self {
+    fn from_board(board: Board) -> Self {
         Minesweeper {
             mines: board.mines(),
             board,
@@ -85,7 +85,7 @@ impl Minesweeper {
         }
     }
 
-    pub fn new(width: usize, height: usize, mines: usize) -> Self {
+    fn with_size_and_mines(width: usize, height: usize, mines: usize) -> Self {
         Minesweeper {
             board: Board::from_minefield(Minefield::new(width, height)),
             mines,
@@ -100,6 +100,16 @@ impl Minesweeper {
             margin_corners: Self::load_margin_corners(),
             faces: Self::load_faces(),
         }
+    }
+
+    pub fn new(ctx: &egui::Context) -> Self {
+        Self::setup_fonts(ctx);
+        let mut visuals = Visuals::light();
+        visuals.override_text_color = Some(Color32::BLACK);
+
+        ctx.set_visuals(visuals);
+
+        Minesweeper::with_size_and_mines(9, 9, 10)
     }
 
     pub fn counter(&self, ui: &mut Ui, number: usize) -> Response {
@@ -266,7 +276,6 @@ impl Minesweeper {
             self.board.minefield.width,
             self.board.minefield.height,
         ));
-        // self.board = Board::new(self.board.minefield.width, self.board.minefield.width, 1);
         self.started = false;
         self.finished = None;
     }
@@ -285,6 +294,35 @@ impl Minesweeper {
             "Started game with minefield: \n{}",
             self.board.minefield.format()
         );
+    }
+
+    fn setup_fonts(ctx: &egui::Context) {
+        // Start with the default fonts (we will be adding to them rather than replacing them).
+        let mut fonts = egui::FontDefinitions::default();
+
+        // Install my own font (maybe supporting non-latin characters).
+        // .ttf and .otf files supported.
+        fonts.font_data.insert(
+            "my_font".to_owned(),
+            egui::FontData::from_static(include_bytes!("../assets/uni05_53.ttf")),
+        );
+
+        // Put my font first (highest priority) for proportional text:
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, "my_font".to_owned());
+
+        // // Put my font as last fallback for monospace:
+        // fonts
+        //     .families
+        //     .entry(egui::FontFamily::Monospace)
+        //     .or_default()
+        //     .push("my_font".to_owned());
+        //
+        // Tell egui to use these fonts:
+        ctx.set_fonts(fonts);
     }
 }
 

@@ -10,12 +10,14 @@ mod utils;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), eframe::Error> {
+    use minesweeper::Minesweeper;
+
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-    let game = minesweeper::Minesweeper::new(10, 10, 16);
+    // let game = minesweeper::Minesweeper::new(10, 10, 16);
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size(game.board.size()),
+        viewport: egui::ViewportBuilder::default(),
         ..Default::default()
     };
 
@@ -26,7 +28,7 @@ fn main() -> Result<(), eframe::Error> {
             // This gives us image support:
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
-            Box::new(game)
+            Box::new(Minesweeper::new(&cc.egui_ctx))
         }),
     )
 }
@@ -37,8 +39,6 @@ fn main() {
 
     let web_options = eframe::WebOptions::default();
 
-    let game = minesweeper::Minesweeper::new(10, 10, 16);
-
     wasm_bindgen_futures::spawn_local(async {
         eframe::WebRunner::new()
             .start(
@@ -47,7 +47,7 @@ fn main() {
                 Box::new(|cc| {
                     egui_extras::install_image_loaders(&cc.egui_ctx);
 
-                    Box::new(game)
+                    Box::new(Minesweeper::new(&cc.egui_ctx))
                 }),
             )
             .await

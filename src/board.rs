@@ -168,41 +168,43 @@ impl Widget for &mut Board {
             screen_bounds,
         );
 
-        let (_, response) = ui.allocate_exact_size(screen_bounds.size(), Sense::click());
-
-        if let Some(pos) = response.interact_pointer_pos() {
-            let pos = board_to_screen.inverse().transform_pos(pos);
-            let x = pos.x as usize / 16;
-            let y = pos.y as usize / 16;
-
-            if ui.input(|input| input.pointer.button_pressed(PointerButton::Secondary)) {
-                self.toggle_flag(x, y);
-            }
-
-            if let Some((px, py, time)) = self.pressed {
-                if x == px && y == py {
-                    if time.elapsed().as_secs_f64() >= LONG_PRESS_DURATION
-                        && self.minefield.cells[y * self.minefield.width + x].state
-                            != CellState::Opened
-                    {
-                        self.toggle_flag(x, y);
-                        self.pressed = None;
-                    } else if ui
-                        .input(|input| input.pointer.button_released(PointerButton::Primary))
-                    {
-                        self.open_cell(x, y);
-                        self.pressed = None;
-                    }
-                }
-            } else if ui.input(|input| input.pointer.button_pressed(PointerButton::Primary)) {
-                self.pressed = Some((x, y, Instant::now()));
-            }
-        } else {
-            self.pressed = None;
-        }
-
         let is_lost = self.minefield.is_lost();
         let is_solved = self.minefield.is_solved();
+
+        let (_, response) = ui.allocate_exact_size(screen_bounds.size(), Sense::click());
+
+        if !is_lost && !is_solved {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let pos = board_to_screen.inverse().transform_pos(pos);
+                let x = pos.x as usize / 16;
+                let y = pos.y as usize / 16;
+
+                if ui.input(|input| input.pointer.button_pressed(PointerButton::Secondary)) {
+                    self.toggle_flag(x, y);
+                }
+
+                if let Some((px, py, time)) = self.pressed {
+                    if x == px && y == py {
+                        if time.elapsed().as_secs_f64() >= LONG_PRESS_DURATION
+                            && self.minefield.cells[y * self.minefield.width + x].state
+                                != CellState::Opened
+                        {
+                            self.toggle_flag(x, y);
+                            self.pressed = None;
+                        } else if ui
+                            .input(|input| input.pointer.button_released(PointerButton::Primary))
+                        {
+                            self.open_cell(x, y);
+                            self.pressed = None;
+                        }
+                    }
+                } else if ui.input(|input| input.pointer.button_pressed(PointerButton::Primary)) {
+                    self.pressed = Some((x, y, Instant::now()));
+                }
+            } else {
+                self.pressed = None;
+            }
+        }
 
         for y in 0..self.minefield.height {
             for x in 0..self.minefield.width {

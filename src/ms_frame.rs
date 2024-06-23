@@ -1,9 +1,9 @@
 use crate::utils::load_image;
 use egui::{
-    include_image, pos2, Color32, Image, InnerResponse, Margin, Rect, Sense, Shape, Ui, Vec2,
+    include_image, pos2, Color32, Context, Image, InnerResponse, Margin, Rect, Sense, Shape, Ui,
+    Vec2,
 };
 use once_cell::sync::Lazy;
-use std::f32::consts::PI;
 
 pub const SHADOW_COLOR: Color32 = Color32::from_rgb(128, 128, 128);
 const HIGHTLIGHT_COLOR: Color32 = Color32::WHITE;
@@ -19,12 +19,14 @@ pub enum FrameKind {
     Protruded,
     Floating,
     Inscribed,
+    Pressed,
 }
 
 pub struct MinesweeperFrame {
     margin: Margin,
     border: usize,
     kind: FrameKind,
+    sense: Sense,
 }
 
 impl Default for MinesweeperFrame {
@@ -33,6 +35,7 @@ impl Default for MinesweeperFrame {
             margin: Margin::ZERO,
             border: 0,
             kind: FrameKind::Inscribed,
+            sense: Sense::hover(),
         }
     }
 }
@@ -43,6 +46,11 @@ impl MinesweeperFrame {
             border,
             ..Default::default()
         }
+    }
+
+    pub fn border(mut self, border: usize) -> Self {
+        self.border = border;
+        self
     }
 
     pub fn margin(mut self, margin: Margin) -> Self {
@@ -60,34 +68,50 @@ impl MinesweeperFrame {
         self
     }
 
-    pub fn show<R>(
-        &self,
-        ui: &mut egui::Ui,
-        add_contents: impl FnOnce(&mut Ui) -> R,
-    ) -> InnerResponse<R> {
-        let b = Margin::same(self.border as f32);
-        let outer_rect_bounds = ui.available_rect_before_wrap();
-        let inner_rect_bounds = (b + self.margin).shrink_rect(outer_rect_bounds);
+    pub fn pressed(mut self) -> Self {
+        self.kind = FrameKind::Pressed;
+        self
+    }
 
-        let mut content_ui = ui.child_ui(inner_rect_bounds, *ui.layout());
+    pub fn sense(mut self, sense: Sense) -> Self {
+        self.sense = sense;
+        self
+    }
 
-        let background = ui.painter().add(Shape::Noop);
+    fn border_margin(&self) -> Margin {
+        Margin::same(self.border as f32)
+    }
 
-        let ret = add_contents(&mut content_ui);
+    fn inner_rect(&self, content_rect: Rect) -> Rect {
+        self.margin.expand_rect(content_rect)
+    }
 
-        let inner_rect = self.margin.expand_rect(content_ui.min_rect());
-        let outer_rect = b.expand_rect(inner_rect);
+    fn outer_rect(&self, content_rect: Rect) -> Rect {
+        self.border_margin()
+            .expand_rect(self.inner_rect(content_rect))
+    }
 
-        ui.painter().set(
-            background,
-            Shape::rect_filled(inner_rect, 0.0, BACKGROUND_COLOR),
-        );
+    pub fn paint(&self, ctx: &Context, content_rect: Rect) -> Shape {
+        let b = self.border_margin();
+        let inner_rect = self.inner_rect(content_rect);
+        let outer_rect = self.outer_rect(content_rect);
 
+        let mut shapes = Vec::new();
+
+        shapes.push(Shape::rect_filled(inner_rect, 0.0, BACKGROUND_COLOR));
         // left
-        ui.painter().rect_filled(
+        shapes.push(Shape::rect_filled(
             Rect::from_min_max(
                 outer_rect.min,
-                pos2(outer_rect.min.x + b.left, outer_rect.max.y - b.bottom),
+                pos2(
+                    outer_rect.min.x + b.left,
+                    outer_rect.max.y
+                        - if self.kind == FrameKind::Pressed {
+                            0.0
+                        } else {
+                            b.bottom
+                        },
+                ),
             ),
             0.0,
             if self.kind == FrameKind::Floating {
@@ -95,12 +119,20 @@ impl MinesweeperFrame {
             } else {
                 SHADOW_COLOR
             },
-        );
+        ));
         // top
-        ui.painter().rect_filled(
+        shapes.push(Shape::rect_filled(
             Rect::from_min_max(
                 outer_rect.min,
-                pos2(outer_rect.max.x - b.right, outer_rect.min.y + b.top),
+                pos2(
+                    outer_rect.max.x
+                        - if self.kind == FrameKind::Pressed {
+                            0.0
+                        } else {
+                            b.right
+                        },
+                    outer_rect.min.y + b.top,
+                ),
             ),
             0.0,
             if self.kind == FrameKind::Floating {
@@ -108,36 +140,38 @@ impl MinesweeperFrame {
             } else {
                 SHADOW_COLOR
             },
-        );
+        ));
         // right
-        ui.painter().rect_filled(
-            Rect::from_min_max(
-                pos2(outer_rect.max.x - b.right, outer_rect.min.y + b.top),
-                pos2(outer_rect.max.x, outer_rect.max.y),
-            ),
-            0.0,
-            if self.kind == FrameKind::Inscribed {
-                HIGHTLIGHT_COLOR
-            } else {
-                SHADOW_COLOR
-            },
-        );
-        // bottom
-        ui.painter().rect_filled(
-            Rect::from_min_max(
-                pos2(outer_rect.min.x + b.left, outer_rect.max.y - b.bottom),
-                pos2(outer_rect.max.x, outer_rect.max.y),
-            ),
-            0.0,
-            if self.kind == FrameKind::Inscribed {
-                HIGHTLIGHT_COLOR
-            } else {
-                SHADOW_COLOR
-            },
-        );
+        if self.kind != FrameKind::Pressed {
+            shapes.push(Shape::rect_filled(
+                Rect::from_min_max(
+                    pos2(outer_rect.max.x - b.right, outer_rect.min.y + b.top),
+                    pos2(outer_rect.max.x, outer_rect.max.y),
+                ),
+                0.0,
+                if self.kind == FrameKind::Inscribed {
+                    HIGHTLIGHT_COLOR
+                } else {
+                    SHADOW_COLOR
+                },
+            ));
+            // bottom
+            shapes.push(Shape::rect_filled(
+                Rect::from_min_max(
+                    pos2(outer_rect.min.x + b.left, outer_rect.max.y - b.bottom),
+                    pos2(outer_rect.max.x, outer_rect.max.y),
+                ),
+                0.0,
+                if self.kind == FrameKind::Inscribed {
+                    HIGHTLIGHT_COLOR
+                } else {
+                    SHADOW_COLOR
+                },
+            ));
+        }
 
-        if self.border > 1 {
-            let mut corner = if self.border == 3 {
+        if self.border > 1 && self.kind != FrameKind::Pressed {
+            let corner = if self.border == 3 {
                 MARGIN_CORNER_3
             } else if self.border == 2 {
                 MARGIN_CORNER_2
@@ -145,28 +179,70 @@ impl MinesweeperFrame {
                 panic!("Border too large: {:?}", self.border);
             };
 
-            if self.kind == FrameKind::Floating {
-                *corner = corner.clone().rotate(PI, Vec2::splat(0.5));
-            }
+            let uv = if self.kind == FrameKind::Floating {
+                Rect::from_min_max(pos2(1.0, 1.0), pos2(0.0, 0.0))
+            } else {
+                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))
+            };
 
-            corner.paint_at(
-                ui,
+            let corner = corner.load_for_size(ctx, Vec2::splat(16.0)).unwrap();
+
+            shapes.push(Shape::image(
+                corner.texture_id().unwrap(),
                 Rect::from_min_max(
                     pos2(outer_rect.max.x - b.right, outer_rect.min.y),
                     pos2(outer_rect.max.x, outer_rect.min.y + b.top),
                 ),
-            );
-            corner.paint_at(
-                ui,
+                uv,
+                Color32::WHITE,
+            ));
+
+            shapes.push(Shape::image(
+                corner.texture_id().unwrap(),
                 Rect::from_min_max(
                     pos2(outer_rect.min.x, outer_rect.max.y - b.bottom),
                     pos2(outer_rect.min.x + b.left, outer_rect.max.y),
                 ),
-            );
+                uv,
+                Color32::WHITE,
+            ));
         }
 
-        let response = ui.allocate_rect(outer_rect, Sense::hover());
+        Shape::Vec(shapes)
+    }
 
-        InnerResponse::new(ret, response)
+    pub fn show_inner_contents<R>(
+        &self,
+        ui: &mut Ui,
+        add_contents: impl FnOnce(&mut Ui) -> R,
+    ) -> (InnerResponse<R>, Ui) {
+        let b = Margin::same(self.border as f32);
+        let outer_rect_bounds = ui.available_rect_before_wrap();
+        let inner_rect_bounds = (b + self.margin).shrink_rect(outer_rect_bounds);
+
+        let mut content_ui = ui.child_ui(inner_rect_bounds, *ui.layout());
+
+        let ret = add_contents(&mut content_ui);
+
+        let content_rect = content_ui.min_rect();
+
+        let response = ui.allocate_rect(self.outer_rect(content_rect), self.sense);
+
+        (InnerResponse::new(ret, response), content_ui)
+    }
+
+    pub fn show<R>(
+        &self,
+        ui: &mut egui::Ui,
+        add_contents: impl FnOnce(&mut Ui) -> R,
+    ) -> InnerResponse<R> {
+        let frame = ui.painter().add(Shape::Noop);
+
+        let (ret, content_ui) = self.show_inner_contents(ui, add_contents);
+
+        ui.painter()
+            .set(frame, self.paint(ui.ctx(), content_ui.min_rect()));
+
+        ret
     }
 }

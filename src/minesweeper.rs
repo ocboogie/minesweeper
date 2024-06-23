@@ -1,7 +1,9 @@
 use web_time::Instant;
 
 use crate::canvas::Canvas;
+use crate::ms_button::MinesweeperButton;
 use crate::ms_frame::MinesweeperFrame;
+use crate::ms_modal::MinesweeperModal;
 use crate::solver::{generate_guessfree, solve_step};
 use crate::utils::load_image;
 use crate::{
@@ -9,7 +11,7 @@ use crate::{
     minefield::{CellKind, CellState, Minefield},
 };
 use eframe::egui::{Image, Sense, Ui, Widget};
-use egui::{include_image, Align, Frame, Layout, Margin, Response, Vec2};
+use egui::{include_image, Align, Frame, Label, Layout, Margin, Response, Vec2};
 use log::info;
 
 const DIGITS_IN_COUNTERS: usize = 3;
@@ -23,6 +25,7 @@ pub struct Minesweeper {
     pub finished: Option<Instant>,
     pub started: bool,
     pub last_pressed: Option<(usize, usize, Instant)>,
+    pub menu_open: bool,
 
     pub digits: [Image<'static>; 10],
     pub margin_corners: [Image<'static>; 2],
@@ -71,6 +74,7 @@ impl Minesweeper {
             finished: None,
             started: true,
             last_pressed: None,
+            menu_open: false,
             digits: Self::load_digits(),
             margin_corners: Self::load_margin_corners(),
             faces: Self::load_faces(),
@@ -86,6 +90,7 @@ impl Minesweeper {
             finished: None,
             started: false,
             last_pressed: None,
+            menu_open: false,
             digits: Self::load_digits(),
             margin_corners: Self::load_margin_corners(),
             faces: Self::load_faces(),
@@ -177,7 +182,8 @@ impl Minesweeper {
                     ui.add_space(((ui.available_width() - counter_size) / 2.0) - FACE_SIZE / 2.0);
 
                     if self.face(ui).clicked() {
-                        self.reset();
+                        // self.reset();
+                        self.menu_open = true;
                     }
 
                     ui.add_space(ui.available_width() - counter_size);
@@ -187,6 +193,48 @@ impl Minesweeper {
                 .inner
             })
             .inner
+    }
+
+    fn menu(&mut self, ui: &mut Ui) {
+        ui.with_layout(Layout::top_down(Align::Center), |ui| {
+            if MinesweeperButton::new()
+                .show(ui, |ui| {
+                    ui.add(Label::new("Beginner").selectable(false));
+                })
+                .response
+                .clicked()
+            {
+                self.board = Board::from_minefield(Minefield::new(9, 9));
+                self.mines = 10;
+                self.reset();
+                self.menu_open = false;
+            }
+            if MinesweeperButton::new()
+                .show(ui, |ui| {
+                    ui.add(Label::new("Intermediate").selectable(false));
+                })
+                .response
+                .clicked()
+            {
+                self.board = Board::from_minefield(Minefield::new(16, 16));
+                self.mines = 40;
+                self.reset();
+                self.menu_open = false;
+            }
+            if MinesweeperButton::new()
+                .show(ui, |ui| {
+                    ui.add(Label::new("Expert").selectable(false));
+                })
+                .response
+                .clicked()
+            {
+                self.board = Board::from_minefield(Minefield::new(30, 16));
+                self.mines = 99;
+                self.reset();
+                self.menu_open = false;
+            }
+        })
+        .inner
     }
 
     fn reset(&mut self) {
@@ -249,8 +297,16 @@ impl Widget for &mut Minesweeper {
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::Space)) {
-            self.board.minefield = solve_step(self.board.minefield.clone())
+            self.board.minefield = solve_step(self.board.minefield.clone());
         }
+
+        let mut modal = MinesweeperModal::new(self.menu_open);
+
+        modal.show(ui, |ui| {
+            self.menu(ui);
+        });
+
+        self.menu_open = modal.open && self.menu_open;
 
         response
     }

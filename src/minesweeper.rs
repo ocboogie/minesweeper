@@ -280,16 +280,25 @@ impl Minesweeper {
         self.finished = None;
     }
 
-    fn start(&mut self, start: usize) {
+    fn start_generating(&mut self, start: usize) {
+        let mut minefield = Minefield::new(self.board.minefield.width, self.board.minefield.height);
+
+        minefield.cells[start].state = CellState::Opened;
+
+        self.board = Board::from_minefield(minefield);
+
         self.guessfree_generator = Some(generate_guessfree(
             start,
             self.board.minefield.width,
             self.board.minefield.height,
             self.mines,
         ));
+    }
+
+    fn start(&mut self, minefield: Minefield) {
+        self.board = Board::from_minefield(minefield);
         self.start = Instant::now();
         self.started = true;
-
         info!(
             "Started game with minefield: \n{}",
             self.board.minefield.format()
@@ -347,7 +356,7 @@ impl Widget for &mut Minesweeper {
 
         if !self.started && response.clicked() {
             if let Some((x, y, _)) = self.last_pressed {
-                self.start(y * self.board.minefield.width + x);
+                self.start_generating(y * self.board.minefield.width + x);
             }
         }
 
@@ -374,8 +383,8 @@ impl Widget for &mut Minesweeper {
 
         if let Some(generator) = &mut self.guessfree_generator {
             if let Ok(minefield) = generator.board.try_recv() {
-                self.board.minefield = minefield;
                 self.guessfree_generator = None;
+                self.start(minefield);
             } else {
                 MinesweeperModal::new(true).show(ui, |ui| {
                     if Minesweeper::generator_status(ui, generator) {

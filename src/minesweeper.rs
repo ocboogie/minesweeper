@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use web_time::Instant;
+use web_time::{Duration, Instant};
 
 use crate::canvas::Canvas;
 use crate::ms_button::MinesweeperButton;
@@ -18,11 +18,76 @@ use log::info;
 
 const DIGITS_IN_COUNTERS: usize = 3;
 const FACE_SIZE: f32 = 24.0;
+const MIN_RENDER_INTERVAL: Duration = Duration::from_millis(100);
 
 struct GuessfreeGenerator {
-    attempts: usize,
     start: usize,
-    solving: bool,
+    mines: usize,
+    width: usize,
+    height: usize,
+    pub attempts: usize,
+    solving: Option<Minefield>,
+}
+
+enum GeneratorStatus {
+    Found(Minefield),
+    StillSolving(Minefield),
+}
+
+impl GuessfreeGenerator {
+    fn new(start: usize, mines: usize, width: usize, height: usize) -> Self {
+        GuessfreeGenerator {
+            start,
+            mines,
+            width,
+            height,
+            attempts: 0,
+            solving: Some(Minefield::new(width, height)),
+        }
+    }
+
+    fn find_initial_minefield(&mut self) -> &mut Minefield {
+        loop {
+            self.attempts += 1;
+
+            let mut minefield = Minefield::generate(self.width, self.height, self.mines);
+
+            if minefield.cells[self.start].kind != CellKind::Mine {
+                minefield.open(self.start % self.width, self.start / self.width);
+                self.solving = Some(minefield);
+                return self.solving.as_mut().unwrap();
+            }
+        }
+    }
+
+    fn run(&mut self) -> GeneratorStatus {
+        let start_instant = Instant::now();
+
+        let mut minefield = match self.solving {
+            Some(ref mut minefield) => minefield,
+            None => self.find_initial_minefield(),
+        };
+
+        while start_instant.elapsed() < MIN_RENDER_INTERVAL {
+            // TODO: Remove the need for the clone here by having solve_step return wheather it is
+            // finish
+            let mut new_minefield = solve_step(minefield.clone());
+
+            if new_minefield.is_solved() {
+                new_minefield.hide();
+                new_minefield.open(self.start % self.width, self.start / self.width);
+                return GeneratorStatus::Found(new_minefield);
+            }
+
+            if new_minefield == *minefield {
+                minefield = self.find_initial_minefield();
+            } else {
+                *minefield = new_minefield;
+            }
+        }
+
+        GeneratorStatus::StillSolving(minefield.clone())
+    }
 }
 
 pub struct Minesweeper {
@@ -34,7 +99,7 @@ pub struct Minesweeper {
     pub started: bool,
     pub last_pressed: Option<(usize, usize, Instant)>,
     pub menu_open: bool,
-    pub guessfree_generator: Option<GuessfreeGenerator>,
+    guessfree_generator: Option<GuessfreeGenerator>,
     // pub guessfree_generator: Option<GuessfreeGenerator>,
     pub digits: [Image<'static>; 10],
     pub margin_corners: [Image<'static>; 2],
@@ -273,11 +338,12 @@ impl Minesweeper {
 
         self.board = Board::from_minefield(minefield);
 
-        self.guessfree_generator = Some(GuessfreeGenerator {
-            attempts: 0,
+        self.guessfree_generator = Some(GuessfreeGenerator::new(
             start,
-            solving: false,
-        });
+            self.mines,
+            self.board.minefield.width,
+            self.board.minefield.height,
+        ));
     }
 
     fn start(&mut self, minefield: Minefield) {
@@ -319,49 +385,7 @@ impl Minesweeper {
         ctx.set_fonts(fonts);
     }
 
-    pub fn generate_step(&mut self) {
-        let width = self.board.minefield.width;
-        let height = self.board.minefield.height;
-        let mines = self.mines;
-
-        if let Some(generator) = &mut self.guessfree_generator {
-            let start = generator.start;
-
-            if !generator.solving {
-                loop {
-                    generator.attempts += 1;
-
-                    self.board.minefield = Minefield::generate(width, height, mines);
-
-                    if self.board.minefield.cells[start].kind == CellKind::Mine {
-                        continue;
-                    }
-
-                    self.board.minefield.open(start % width, start / width);
-                    break;
-                }
-            }
-
-            generator.solving = true;
-
-            let minefield = self.board.minefield.clone();
-
-            let mut new_minefield = solve_step(minefield.clone());
-
-            if new_minefield == minefield {
-                if new_minefield.is_solved() {
-                    new_minefield.reset();
-                    new_minefield.open(start % width, start / width);
-                    self.start(new_minefield);
-                    self.guessfree_generator = None;
-                } else {
-                    generator.solving = false;
-                }
-            } else {
-                self.board.minefield = new_minefield;
-            }
-        }
-    }
+    pub fn generate_step(&mut self) {}
 }
 
 impl Widget for &mut Minesweeper {
@@ -409,16 +433,29 @@ impl Widget for &mut Minesweeper {
 
         let mut cancel = false;
 
-        if self.guessfree_generator.is_some() {
-            self.generate_step();
+        if let Some(generator) = &mut self.guessfree_generator {
+            match generator.run() {
+                GeneratorStatus::Found(minefield) => {
+                    self.start(minefield);
+                    self.guessfree_generator = None;
+                }
+                GeneratorStatus::StillSolving(minefield) => {
+                    self.board = Board::from_minefield(minefield);
+                }
+            }
         }
 
         if let Some(generator) = &mut self.guessfree_generator {
-            MinesweeperModal::new(true).show(ui, |ui| {
-                if Minesweeper::generator_status(ui, generator) {
-                    cancel = true;
-                }
-            });
+            if MinesweeperModal::new(true)
+                .show(ui, |ui| {
+                    if Minesweeper::generator_status(ui, generator) {
+                        cancel = true;
+                    }
+                })
+                .is_some_and(|res| res.clicked())
+            {
+                cancel = true;
+            }
         }
 
         if cancel {

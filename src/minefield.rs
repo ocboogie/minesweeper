@@ -30,7 +30,6 @@ impl Minefield {
     pub fn full(width: usize, height: usize) -> Self {
         Minefield {
             cells: (0..width * height)
-                .into_iter()
                 .map(|_| Cell {
                     kind: CellKind::Mine,
                     state: CellState::Hidden,
@@ -45,7 +44,6 @@ impl Minefield {
         assert!(mines < width * height);
 
         let mut cells = (0..width * height)
-            .into_iter()
             .map(|_| Cell {
                 kind: CellKind::Empty,
                 state: CellState::Hidden,
@@ -76,7 +74,6 @@ impl Minefield {
     pub fn new(width: usize, height: usize) -> Self {
         Minefield {
             cells: (0..width * height)
-                .into_iter()
                 .map(|_| Cell {
                     kind: CellKind::Empty,
                     state: CellState::Hidden,
@@ -227,7 +224,7 @@ impl Minefield {
             .any(|cell| (cell.kind == CellKind::Mine && cell.state == CellState::Opened))
     }
 
-    pub fn reset(&mut self) {
+    pub fn hide(&mut self) {
         for cell in self.cells.iter_mut() {
             cell.state = CellState::Hidden;
         }

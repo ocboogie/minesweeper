@@ -60,10 +60,6 @@ impl Board {
             return;
         }
 
-        if cell.kind == CellKind::Mine {
-            cell.state = CellState::Opened;
-        }
-
         self.minefield.open(x, y);
     }
 

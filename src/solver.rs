@@ -19,7 +19,6 @@ pub fn solve_step(mut minefield: Minefield) -> Minefield {
     let mf_width = minefield.width;
 
     let hidden_cells = (0..(mf_height * mf_width))
-        .into_iter()
         .filter(|idx| minefield.cells[*idx].state == CellState::Hidden)
         .collect::<Vec<_>>();
 

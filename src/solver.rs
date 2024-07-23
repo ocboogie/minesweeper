@@ -275,10 +275,22 @@ impl AsyncGuessfreeGenerator {
 mod tests {
     use super::*;
 
+    fn solve_step_aux(minefield: Minefield) -> Minefield {
+        let mut minefield = minefield;
+        solve_step(&mut minefield);
+        minefield
+    }
+
+    fn solve_aux(minefield: &Minefield) -> Minefield {
+        let mut minefield = minefield.clone();
+        solve(&mut minefield);
+        minefield
+    }
+
     #[test]
     fn test_solve_step() {
         assert_eq!(
-            solve_step(Minefield::parse(
+            solve_step_aux(Minefield::parse(
                 r#"000m
 000.
 000.
@@ -292,7 +304,7 @@ mod tests {
 "#
         );
         assert_eq!(
-            solve_step(Minefield::parse(
+            solve_step_aux(Minefield::parse(
                 r#"0000
 0000
 00m.
@@ -306,7 +318,7 @@ m.0.
 "#
         );
         assert_eq!(
-            solve_step(Minefield::parse(
+            solve_step_aux(Minefield::parse(
                 r#"0000
 0000
 00F0
@@ -324,7 +336,7 @@ F000
     #[test]
     fn test_solve() {
         assert_eq!(
-            solve(&Minefield::parse(
+            solve_aux(&Minefield::parse(
                 r#"00000000
 00000000
 m..m0000
@@ -346,7 +358,7 @@ FF000000
 "#
         );
         assert_eq!(
-            solve(&Minefield::parse(
+            solve_aux(&Minefield::parse(
                 r#".0000000
 m0000000
 00000000
@@ -368,7 +380,7 @@ F0F00000
 "#
         );
         assert_eq!(
-            solve(&Minefield::parse(
+            solve_aux(&Minefield::parse(
                 r#"........
 ...m.m..
 .m00000m
@@ -390,7 +402,7 @@ F0000F00
 "#
         );
         assert_eq!(
-            solve(&Minefield::parse(
+            solve_aux(&mut Minefield::parse(
                 r#".......m
 ....m.mm
 ...0000.

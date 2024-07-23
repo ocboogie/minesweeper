@@ -1,12 +1,12 @@
-use std::sync::atomic::Ordering;
-
-use web_time::{Duration, Instant};
+use web_time::Instant;
 
 use crate::canvas::Canvas;
 use crate::ms_button::MinesweeperButton;
 use crate::ms_frame::MinesweeperFrame;
 use crate::ms_modal::MinesweeperModal;
-use crate::solver::{generate_guessfree, solve_step};
+use crate::solver::{
+    solve_step, AsyncGuessfreeGenerator, GeneratorStatus, ParallelGuessfreeGenerator,
+};
 use crate::utils::load_image;
 use crate::{
     board::Board,
@@ -18,77 +18,11 @@ use log::info;
 
 const DIGITS_IN_COUNTERS: usize = 3;
 const FACE_SIZE: f32 = 24.0;
-const MIN_RENDER_INTERVAL: Duration = Duration::from_millis(100);
 
-struct GuessfreeGenerator {
-    start: usize,
-    mines: usize,
-    width: usize,
-    height: usize,
-    pub attempts: usize,
-    solving: Option<Minefield>,
-}
-
-enum GeneratorStatus {
-    Found(Minefield),
-    StillSolving(Minefield),
-}
-
-impl GuessfreeGenerator {
-    fn new(start: usize, mines: usize, width: usize, height: usize) -> Self {
-        GuessfreeGenerator {
-            start,
-            mines,
-            width,
-            height,
-            attempts: 0,
-            solving: Some(Minefield::new(width, height)),
-        }
-    }
-
-    fn find_initial_minefield(&mut self) -> &mut Minefield {
-        loop {
-            self.attempts += 1;
-
-            let mut minefield = Minefield::generate(self.width, self.height, self.mines);
-
-            if minefield.cells[self.start].kind != CellKind::Mine {
-                minefield.open(self.start % self.width, self.start / self.width);
-                self.solving = Some(minefield);
-                return self.solving.as_mut().unwrap();
-            }
-        }
-    }
-
-    fn run(&mut self) -> GeneratorStatus {
-        let start_instant = Instant::now();
-
-        let mut minefield = match self.solving {
-            Some(ref mut minefield) => minefield,
-            None => self.find_initial_minefield(),
-        };
-
-        while start_instant.elapsed() < MIN_RENDER_INTERVAL {
-            // TODO: Remove the need for the clone here by having solve_step return wheather it is
-            // finish
-            let mut new_minefield = solve_step(minefield.clone());
-
-            if new_minefield.is_solved() {
-                new_minefield.hide();
-                new_minefield.open(self.start % self.width, self.start / self.width);
-                return GeneratorStatus::Found(new_minefield);
-            }
-
-            if new_minefield == *minefield {
-                minefield = self.find_initial_minefield();
-            } else {
-                *minefield = new_minefield;
-            }
-        }
-
-        GeneratorStatus::StillSolving(minefield.clone())
-    }
-}
+#[cfg(target_arch = "wasm32")]
+type Generator = AsyncGuessfreeGenerator;
+#[cfg(not(target_arch = "wasm32"))]
+type Generator = ParallelGuessfreeGenerator;
 
 pub struct Minesweeper {
     pub board: Board,
@@ -99,8 +33,7 @@ pub struct Minesweeper {
     pub started: bool,
     pub last_pressed: Option<(usize, usize, Instant)>,
     pub menu_open: bool,
-    guessfree_generator: Option<GuessfreeGenerator>,
-    // pub guessfree_generator: Option<GuessfreeGenerator>,
+    guessfree_generator: Option<Generator>,
     pub digits: [Image<'static>; 10],
     pub margin_corners: [Image<'static>; 2],
     pub faces: [Image<'static>; 5],
@@ -306,8 +239,8 @@ impl Minesweeper {
         .inner
     }
 
-    fn generator_status(ui: &mut Ui, generator: &GuessfreeGenerator) -> bool {
-        ui.label(format!("Attempts: {}", generator.attempts));
+    fn generator_status(ui: &mut Ui, generator: &Generator) -> bool {
+        ui.label(format!("Attempts: {}", generator.attempts()));
         if MinesweeperButton::new()
             .show(ui, |ui| {
                 ui.label("Cancel");
@@ -338,11 +271,11 @@ impl Minesweeper {
 
         self.board = Board::from_minefield(minefield);
 
-        self.guessfree_generator = Some(GuessfreeGenerator::new(
+        self.guessfree_generator = Some(Generator::new(
             start,
-            self.mines,
             self.board.minefield.width,
             self.board.minefield.height,
+            self.mines,
         ));
     }
 
@@ -420,7 +353,7 @@ impl Widget for &mut Minesweeper {
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::Space)) {
-            self.board.minefield = solve_step(self.board.minefield.clone());
+            solve_step(&mut self.board.minefield);
         }
 
         let mut menu_modal = MinesweeperModal::new(self.menu_open);
@@ -439,9 +372,10 @@ impl Widget for &mut Minesweeper {
                     self.start(minefield);
                     self.guessfree_generator = None;
                 }
-                GeneratorStatus::StillSolving(minefield) => {
+                GeneratorStatus::StillSolving(Some(minefield)) => {
                     self.board = Board::from_minefield(minefield);
                 }
+                _ => {}
             }
         }
 

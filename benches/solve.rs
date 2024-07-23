@@ -81,11 +81,13 @@ m.......mm.....m.....m.mm.....m..m..m.......m.....
 ........m........m....m........................m.."#;
 
 pub fn solver_benchmark(c: &mut Criterion) {
-    let mf_50x50_390 = Minefield::parse(_50X50_390);
-    let _25x25_100 = Minefield::parse(_25X25_100);
+    // let mf_50x50_390 = Minefield::parse(_50X50_390);
+    let mf_25x25_100 = Minefield::parse(_25X25_100);
 
     // c.bench_function("solver 50x50, 390", |b| b.iter(|| solve(&mf_50x50_390)));
-    c.bench_function("solver 25x25, 100", |b| b.iter(|| solve(&_25x25_100)));
+    c.bench_function("solver 25x25, 100", |b| {
+        b.iter(|| solve(&mut (mf_25x25_100.clone())))
+    });
 }
 
 criterion_group!(benches, solver_benchmark);

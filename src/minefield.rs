@@ -1,4 +1,6 @@
-use rand::Rng;
+use std::fmt::{Debug, Display};
+
+use rand::{seq::IteratorRandom, Rng};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CellKind {
@@ -19,7 +21,7 @@ pub struct Cell {
     pub state: CellState,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Minefield {
     pub cells: Vec<Cell>,
     pub width: usize,
@@ -40,7 +42,7 @@ impl Minefield {
         }
     }
 
-    pub fn generate(width: usize, height: usize, mines: usize) -> Self {
+    pub fn generate(rng: &mut impl Rng, width: usize, height: usize, mines: usize) -> Self {
         assert!(mines < width * height);
 
         let mut cells = (0..width * height)
@@ -49,8 +51,6 @@ impl Minefield {
                 state: CellState::Hidden,
             })
             .collect::<Vec<_>>();
-
-        let mut rng = rand::thread_rng();
 
         for _ in 0..mines {
             loop {
@@ -69,6 +69,19 @@ impl Minefield {
             width,
             height,
         }
+    }
+
+    pub fn random_start(rng: &mut impl Rng, width: usize, height: usize, mines: usize) -> Self {
+        let mut minefield = Minefield::generate(rng, width, height, mines);
+
+        let start = (0..width * height)
+            .filter(|&i| minefield.cells[i].kind == CellKind::Empty)
+            .choose(rng)
+            .unwrap();
+
+        minefield.open(start % width, start / width);
+
+        minefield
     }
 
     pub fn new(width: usize, height: usize) -> Self {
@@ -150,7 +163,9 @@ impl Minefield {
                 let c = match (cell.state, cell.kind) {
                     (CellState::Hidden, CellKind::Empty) => '.',
                     (CellState::Hidden, CellKind::Mine) => 'm',
-                    (CellState::Opened, CellKind::Empty) => '0',
+                    (CellState::Opened, CellKind::Empty) => {
+                        self.count_mines(x, y).to_string().chars().next().unwrap()
+                    }
                     (CellState::Opened, CellKind::Mine) => 'M',
                     (CellState::Flagged, CellKind::Empty) => 'f',
                     (CellState::Flagged, CellKind::Mine) => 'F',
@@ -168,7 +183,7 @@ impl Minefield {
         let width = s.lines().next().unwrap().len();
         let mut height = 1;
 
-        for c in s.chars() {
+        for c in s.trim().chars() {
             let cell = match c {
                 '.' => Cell {
                     kind: CellKind::Empty,
@@ -178,7 +193,7 @@ impl Minefield {
                     kind: CellKind::Mine,
                     state: CellState::Hidden,
                 },
-                '0' => Cell {
+                d if d.is_ascii_digit() => Cell {
                     kind: CellKind::Empty,
                     state: CellState::Opened,
                 },
@@ -198,7 +213,8 @@ impl Minefield {
                     height += 1;
                     continue;
                 }
-                _ => panic!("invalid character: {}", c),
+                w if w.is_whitespace() => continue,
+                _ => panic!("invalid character: {:?}", c),
             };
 
             cells.push(cell);
@@ -228,5 +244,17 @@ impl Minefield {
         for cell in self.cells.iter_mut() {
             cell.state = CellState::Hidden;
         }
+    }
+}
+
+impl Display for Minefield {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.format())
+    }
+}
+
+impl Debug for Minefield {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\n{}", self.format())
     }
 }

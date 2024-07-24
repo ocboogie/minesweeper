@@ -6,6 +6,7 @@ use eframe::{
     epaint::{vec2, Rect},
 };
 use egui::{emath::RectTransform, pos2, PointerButton, Pos2, Response, TextureOptions};
+use rand::thread_rng;
 use web_time::Instant;
 
 const FLAGGING_ANIMATION_DURATION: f32 = 0.10;
@@ -28,7 +29,7 @@ impl Board {
     }
 
     pub fn new(width: usize, height: usize, mines: usize) -> Self {
-        Self::from_minefield(Minefield::generate(width, height, mines))
+        Self::from_minefield(Minefield::generate(&mut thread_rng(), width, height, mines))
     }
 
     pub fn mines(&self) -> usize {

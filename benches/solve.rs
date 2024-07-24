@@ -1,7 +1,9 @@
-use minesweeper::minefield::Minefield;
 use minesweeper::solver::solve;
+use minesweeper::{minefield::Minefield, solver::solve_chucking};
 
 use criterion::{criterion_group, criterion_main, Criterion};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 const _25X25_100: &str = r#".mm....m............m.m..
 m..m...m..........m...m..
@@ -82,11 +84,21 @@ m.......mm.....m.....m.mm.....m..m..m.......m.....
 
 pub fn solver_benchmark(c: &mut Criterion) {
     // let mf_50x50_390 = Minefield::parse(_50X50_390);
-    let mf_25x25_100 = Minefield::parse(_25X25_100);
+    // let mf_25x25_100 = Minefield::parse(_25X25_100);
+
+    let mut rng = StdRng::seed_from_u64(3);
+
+    let expert = Minefield::random_start(&mut rng, 30, 16, 99);
+
+    dbg!(&expert);
 
     // c.bench_function("solver 50x50, 390", |b| b.iter(|| solve(&mf_50x50_390)));
-    c.bench_function("solver 25x25, 100", |b| {
-        b.iter(|| solve(&mut (mf_25x25_100.clone())))
+
+    c.bench_function("solver, 25x25, 100", |b| {
+        b.iter(|| solve(&mut (expert.clone())))
+    });
+    c.bench_function("solver using chucking, 25x25, 100", |b| {
+        b.iter(|| solve_chucking(&mut (expert.clone())))
     });
 }
 

@@ -5,7 +5,8 @@ use crate::ms_button::MinesweeperButton;
 use crate::ms_frame::MinesweeperFrame;
 use crate::ms_modal::MinesweeperModal;
 use crate::solver::{
-    solve_step, AsyncGuessfreeGenerator, GeneratorStatus, ParallelGuessfreeGenerator,
+    solve_step, solve_step_chucking, AsyncGuessfreeGenerator, GeneratorStatus,
+    ParallelGuessfreeGenerator,
 };
 use crate::utils::load_image;
 use crate::{
@@ -72,14 +73,14 @@ impl Minesweeper {
         ]
     }
 
-    fn with_size_and_mines(width: usize, height: usize, mines: usize) -> Self {
+    fn from_minefield(minefield: Minefield, mines: usize) -> Self {
         Minesweeper {
-            board: Board::from_minefield(Minefield::new(width, height)),
+            board: Board::from_minefield(minefield),
             mines,
             canvas: Canvas::new(),
             start: Instant::now(),
             finished: None,
-            started: false,
+            started: true,
             last_pressed: None,
             menu_open: false,
             guessfree_generator: None,
@@ -89,14 +90,45 @@ impl Minesweeper {
         }
     }
 
-    pub fn new(ctx: &egui::Context) -> Self {
+    fn from_size_and_mines(width: usize, height: usize, mines: usize) -> Self {
+        Minesweeper {
+            board: Board::from_minefield(Minefield::new(width, height)),
+            mines,
+            canvas: Canvas::new(),
+            start: Instant::now(),
+            finished: None,
+            started: true,
+            last_pressed: None,
+            menu_open: false,
+            guessfree_generator: None,
+            digits: Self::load_digits(),
+            margin_corners: Self::load_margin_corners(),
+            faces: Self::load_faces(),
+        }
+    }
+
+    fn setup(ctx: &egui::Context) {
         Self::setup_fonts(ctx);
         let mut visuals = Visuals::light();
         visuals.override_text_color = Some(Color32::BLACK);
 
         ctx.set_visuals(visuals);
+    }
 
-        Minesweeper::with_size_and_mines(9, 9, 10)
+    pub fn new_beginner(ctx: &egui::Context) -> Self {
+        Self::setup(ctx);
+        Self::from_size_and_mines(9, 9, 10)
+    }
+
+    pub fn start_from_minefield(ctx: &egui::Context, minefield: Minefield) -> Self {
+        Self::setup(ctx);
+        let mines = minefield
+            .cells
+            .iter()
+            .filter(|cell| cell.kind == CellKind::Mine)
+            .count();
+
+        Self::from_minefield(minefield, mines)
     }
 
     pub fn counter(&self, ui: &mut Ui, number: usize) -> Response {

@@ -1,4 +1,10 @@
 use crate::minefield::{CellKind, CellState, Minefield};
+use faer::{
+    linalg::zip::{MatShape, ViewMut},
+    mat::from_row_major_slice,
+    reborrow::{Reborrow, ReborrowMut},
+    scale, unzipped, zipped, MatMut,
+};
 use log::warn;
 use peroxide::{
     fuga::{LinearAlgebra, Shape},
@@ -7,7 +13,7 @@ use peroxide::{
 use rand::thread_rng;
 use std::{
     iter::once,
-    ops::Range,
+    ops::{MulAssign, Range},
     sync::{
         atomic::{AtomicU32, Ordering},
         mpsc::{channel, sync_channel, Receiver, Sender, TryRecvError},
@@ -167,6 +173,31 @@ pub fn solve_chuck(
     changed
 }
 
+pub fn convert_ref_to_rref(mut matrix: MatMut<f32>) {
+    for y in (0..matrix.nrows()).rev() {
+        let mut row = matrix.rb_mut().row_mut(y);
+        let Some((leading, pivot)) = row
+            .rb_mut()
+            .iter()
+            .cloned()
+            .enumerate()
+            .find(|(_, a)| *a != 0.0)
+        else {
+            continue;
+        };
+
+        row.mul_assign(scale(1.0 / pivot));
+
+        for y2 in (0..y).rev() {
+            let above = matrix.rb().row(y2)[leading];
+
+            for x in leading..matrix.ncols() {
+                matrix.write(y2, x, matrix.read(y2, x) - above * matrix.read(y, x));
+            }
+        }
+    }
+}
+
 pub fn solve_step(minefield: &mut Minefield) -> bool {
     let mf_height = minefield.height;
     let mf_width = minefield.width;
@@ -210,6 +241,12 @@ pub fn solve_step(minefield: &mut Minefield) -> bool {
         })
         .collect::<Vec<f32>>();
 
+    dbg!(
+        inner_matrix.len() / matrix_height,
+        matrix_height,
+        inner_matrix.len()
+    );
+
     if matrix_height == 0 {
         warn!("No hidden cells to solve");
         return false;
@@ -217,21 +254,44 @@ pub fn solve_step(minefield: &mut Minefield) -> bool {
 
     let matrix_width = inner_matrix.len() / matrix_height;
 
-    let matrix = matrix(inner_matrix, matrix_height, matrix_width, Shape::Row);
+    let matrix_b = matrix(
+        inner_matrix.clone(),
+        matrix_height,
+        matrix_width,
+        Shape::Row,
+    );
 
-    eprintln!("matrix: {}", matrix);
+    let matrix = from_row_major_slice(&inner_matrix, matrix_height, matrix_width);
 
-    let reduced = matrix.rref();
+    let lu = matrix.full_piv_lu();
 
-    eprintln!("reduced: {}", reduced);
+    // eprintln!("matrix: {}", matrix_b);
+
+    let reduced = matrix_b.rref();
+
+    // eprintln!("reduced: {}", reduced);
 
     let mut changed = false;
 
-    for row in reduced.data.chunks(matrix_width) {
+    let mut u = lu.compute_u();
+    // eprintln!("u: {:?}", u);
+
+    convert_ref_to_rref(u.as_mut());
+
+    // eprintln!("reduced: {:?}", u);
+
+    let reduced = u * lu.col_permutation();
+
+    // eprintln!("permuated: {:?}", reduced);
+
+    for row in reduced.row_iter() {
         let mut upper_bound: isize = 0;
         let mut lower_bound: isize = 0;
 
-        for x in row[..row.len() - 1].iter() {
+        // use faer::row::RowIndex;
+
+        for x in row.get(..row.ncols() - 1).iter() {
+            dbg!(*x);
             if *x == 1.0 {
                 upper_bound += 1;
             } else if *x == -1.0 {
@@ -243,10 +303,10 @@ pub fn solve_step(minefield: &mut Minefield) -> bool {
             continue;
         }
 
-        let y = *row.last().unwrap() as isize;
+        let y = row[row.ncols() - 1] as isize;
 
         if upper_bound == y {
-            for (val, idx) in row[..row.len() - 1].iter().zip(hidden_cells.iter()) {
+            for (val, idx) in row.get(..row.ncols() - 1).iter().zip(hidden_cells.iter()) {
                 if *val == 1.0 {
                     changed = true;
                     minefield.cells[*idx].state = CellState::Flagged;
@@ -256,7 +316,7 @@ pub fn solve_step(minefield: &mut Minefield) -> bool {
                 }
             }
         } else if lower_bound == y {
-            for (val, idx) in row[..row.len() - 1].iter().zip(hidden_cells.iter()) {
+            for (val, idx) in row.get(..row.ncols() - 1).iter().zip(hidden_cells.iter()) {
                 if *val == 1.0 {
                     changed = true;
                     minefield.open(*idx % mf_width, *idx / mf_width);
@@ -434,6 +494,7 @@ impl AsyncGuessfreeGenerator {
 
 #[cfg(test)]
 mod tests {
+    use faer::Mat;
     use rand::{rngs::StdRng, SeedableRng};
 
     use super::*;
@@ -561,25 +622,24 @@ mod tests {
             ),
             (
                 r#"0000
-             0000
-             00m.
-             m..."#,
+                   0000
+                   00m.
+                   m..."#,
                 r#"0000
-             0000
-             00F0
-             m.0.
-             "#,
+                   0000
+                   00F0
+                   m.0."#,
             ),
             (
                 r#"0000
-             0000
-             00F0
-             m.0."#,
+                   0000
+                   00F0
+                   m.0."#,
                 r#"0000
-             0000
-             00F0
-             F000
-             "#,
+                   0000
+                   00F0
+                   F000
+                   "#,
             ),
             (
                 r#"00000m
@@ -669,20 +729,17 @@ mod tests {
     #[test]
     fn test_solve() {
         let solved = solve_aux(Minefield::parse(
-            r#"m.1m.1......mm.m........m.....
-               22112F..m..m...m.....m........
-               F10022.m...........m.m..m.....
-               11001F..m....m.m...m....mm....
-               001134m......m......m....mm...
-               124F4FF3F2...m.mmmm........m..
-               1FFFF32212m....m.m....m..m..m.
-               1233321012......mm.m......m...
-               00001F101F..mmm.m.....m.......
-               1100111022.m..................
-               F21000001F3..m.mm.............
-               3F100011213m..m.............m.
-               F310002F202m........mmm.m....m
-               F322224F323...............m..m "#,
+            r#"m.1m.1......m
+               22112F..m..m.
+               F10022.m.....
+               001134m......
+               1FFFF32212m..
+               00001F101F..m
+               1100111022.m.
+               F21000001F3..
+               3F100011213m.
+               F310002F202m.
+               F322224F323.."#,
         ));
 
         panic!("{}", solved);
@@ -798,4 +855,28 @@ mod tests {
     // "#
     //     );
     // }
+
+    #[test]
+    fn test_convert_ref_to_rref() {
+        use faer::mat;
+
+        let mut matrix: Mat<f32> = mat![
+            [1.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 2.0, 1.0],
+            [0.0, 0.0, 0.0]
+        ];
+
+        convert_ref_to_rref(matrix.as_mut());
+
+        assert_eq!(
+            matrix,
+            mat![
+                [1.0, 0.0, -0.5 as f32],
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.5],
+                [0.0, 0.0, 0.0]
+            ]
+        );
+    }
 }

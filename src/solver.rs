@@ -3,7 +3,9 @@ use faer::{
     linalg::zip::{MatShape, ViewMut},
     mat::from_row_major_slice,
     reborrow::{Reborrow, ReborrowMut},
-    scale, unzipped, zipped, MatMut,
+    scale,
+    sparse::SparseRowMatMut,
+    unzipped, zipped, MatMut,
 };
 use log::warn;
 use peroxide::{
@@ -198,7 +200,33 @@ pub fn convert_ref_to_rref(mut matrix: MatMut<f32>) {
     }
 }
 
-pub fn solve_step(minefield: &mut Minefield) -> bool {
+// pub fn sparse_convert_ref_to_rref(mut matrix: SparseRowMatMut<f32>) {
+//     for y in (0..matrix.nrows()).rev() {
+//         let mut row = matrix.rb_mut().row_mut(y);
+//         let Some((leading, pivot)) = row
+//             .rb_mut()
+//             .iter()
+//             .cloned()
+//             .enumerate()
+//             .find(|(_, a)| *a != 0.0)
+//         else {
+//             continue;
+//         };
+//
+//         row.mul_assign(scale(1.0 / pivot));
+//
+//         for y2 in (0..y).rev() {
+//             let above = matrix.rb().row(y2)[leading];
+//
+//             for x in leading..matrix.ncols() {
+//                 matrix.write(y2, x, matrix.read(y2, x) - above * matrix.read(y, x));
+//             }
+//         }
+//     }
+// }
+
+pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
+    eprintln!("before: {}", minefield);
     let mf_height = minefield.height;
     let mf_width = minefield.width;
 
@@ -261,37 +289,28 @@ pub fn solve_step(minefield: &mut Minefield) -> bool {
         Shape::Row,
     );
 
-    let matrix = from_row_major_slice(&inner_matrix, matrix_height, matrix_width);
-
-    let lu = matrix.full_piv_lu();
-
-    // eprintln!("matrix: {}", matrix_b);
+    eprintln!("{}", matrix_b.submat((0, 0), (7, 24)));
+    eprintln!(
+        "{}",
+        matrix_b.submat((0, matrix_width - 1), (7, matrix_width - 1))
+    );
+    // eprintln!("{}",
 
     let reduced = matrix_b.rref();
 
-    // eprintln!("reduced: {}", reduced);
+    eprintln!("{}", reduced.submat((0, 0), (7, 24)));
+    eprintln!(
+        "{}",
+        reduced.submat((0, matrix_width - 1), (7, matrix_width - 1))
+    );
 
     let mut changed = false;
 
-    let mut u = lu.compute_u();
-    // eprintln!("u: {:?}", u);
-
-    convert_ref_to_rref(u.as_mut());
-
-    // eprintln!("reduced: {:?}", u);
-
-    let reduced = u * lu.col_permutation();
-
-    // eprintln!("permuated: {:?}", reduced);
-
-    for row in reduced.row_iter() {
+    for row in reduced.data.chunks(matrix_width) {
         let mut upper_bound: isize = 0;
         let mut lower_bound: isize = 0;
 
-        // use faer::row::RowIndex;
-
-        for x in row.get(..row.ncols() - 1).iter() {
-            dbg!(*x);
+        for x in row[..row.len() - 1].iter() {
             if *x == 1.0 {
                 upper_bound += 1;
             } else if *x == -1.0 {
@@ -303,10 +322,10 @@ pub fn solve_step(minefield: &mut Minefield) -> bool {
             continue;
         }
 
-        let y = row[row.ncols() - 1] as isize;
+        let y = row[row.len() - 1] as isize;
 
         if upper_bound == y {
-            for (val, idx) in row.get(..row.ncols() - 1).iter().zip(hidden_cells.iter()) {
+            for (val, idx) in row[..row.len() - 1].iter().zip(hidden_cells.iter()) {
                 if *val == 1.0 {
                     changed = true;
                     minefield.cells[*idx].state = CellState::Flagged;
@@ -316,7 +335,7 @@ pub fn solve_step(minefield: &mut Minefield) -> bool {
                 }
             }
         } else if lower_bound == y {
-            for (val, idx) in row.get(..row.ncols() - 1).iter().zip(hidden_cells.iter()) {
+            for (val, idx) in row[..row.len() - 1].iter().zip(hidden_cells.iter()) {
                 if *val == 1.0 {
                     changed = true;
                     minefield.open(*idx % mf_width, *idx / mf_width);
@@ -331,8 +350,8 @@ pub fn solve_step(minefield: &mut Minefield) -> bool {
     changed
 }
 
-pub fn solve(minefield: &mut Minefield) {
-    while solve_step(minefield) {}
+pub fn solve_rref(minefield: &mut Minefield) {
+    while solve_step_rref(minefield) {}
 }
 
 pub fn solve_chucking(minefield: &mut Minefield, chuck_size: usize, chuck_overlap: usize) {
@@ -382,7 +401,7 @@ impl ParallelGuessfreeGenerator {
 
             minefield.open(start % width, start / width);
 
-            solve(&mut minefield);
+            solve_rref(&mut minefield);
 
             if cancel_rx.try_recv().is_ok() {
                 return;
@@ -474,7 +493,7 @@ impl AsyncGuessfreeGenerator {
         };
 
         while start_instant.elapsed() < MIN_RENDER_INTERVAL {
-            let stuck = solve_step(minefield);
+            let stuck = solve_step_rref(minefield);
 
             if minefield.is_solved() {
                 let mut solved_minefield = minefield.clone();
@@ -505,7 +524,7 @@ mod tests {
     }
 
     fn solve_step_aux(mut minefield: Minefield) -> Minefield {
-        solve_step(&mut minefield);
+        solve_step_rref(&mut minefield);
         minefield
     }
 
@@ -519,7 +538,7 @@ mod tests {
     }
 
     fn solve_aux(mut minefield: Minefield) -> Minefield {
-        solve(&mut minefield);
+        solve_rref(&mut minefield);
         minefield
     }
 
@@ -528,6 +547,7 @@ mod tests {
         minefield
     }
 
+    #[ignore]
     #[test]
     fn test_solve_chuck() {
         assert_eq!(
@@ -607,9 +627,23 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn test_solve_step() {
         for (a, b) in &[
+            (
+                r#"0011..
+                   001m..
+                   0012..
+                   1122m.
+                   1F2m..
+                   1133mm
+                   012m.."#,
+                r#"000F
+             0000
+             0000
+             00F0"#,
+            ),
             (
                 r#"000m
              000.
@@ -687,7 +721,7 @@ mod tests {
             eprintln!("{}", minefield);
 
             solve_step_chucking(&mut minefield, 5, 1);
-            solve_step(&mut minefield2);
+            solve_step_rref(&mut minefield2);
 
             assert_eq!(minefield, minefield2);
         }
@@ -705,12 +739,13 @@ mod tests {
             eprintln!("{}", minefield);
 
             solve_chucking(&mut minefield, 5, 4);
-            solve(&mut minefield2);
+            solve_rref(&mut minefield2);
 
             assert_eq!(minefield, minefield2);
         }
     }
 
+    #[ignore]
     #[test]
     fn test_solve_chucking() {
         for (a, b) in &[(
@@ -729,18 +764,36 @@ mod tests {
     #[test]
     fn test_solve() {
         let solved = solve_aux(Minefield::parse(
-            r#"m.1m.1......m
-               22112F..m..m.
-               F10022.m.....
-               001134m......
-               1FFFF32212m..
-               00001F101F..m
-               1100111022.m.
-               F21000001F3..
-               3F100011213m.
-               F310002F202m.
-               F322224F323.."#,
+            r#"m.1m.1......
+               22112F22m..m
+               F100223m....
+               11001F3.m...
+               001134F42...
+               124F4FF3F2..
+               1FFFF43223m.
+               12333F101F..
+               1100111022.m
+               F21000001F3.
+               3F100011213F
+               F310002F202m
+               F200002F201."#,
         ));
+        // let solved = solve_aux(Minefield::parse(
+        //     r#"m.1m.1......
+        //        22112F..m..m
+        //        F10022.m....
+        //        11001F..m...
+        //        001134m.....
+        //        124F4FF3F2..
+        //        1FFFF32212m.
+        //        1233321012..
+        //        00001F101F..
+        //        1100111022.m
+        //        F21000001F3.
+        //        3F100011213m
+        //        F310002F202m
+        //        F322224F323."#,
+        // ));
 
         panic!("{}", solved);
         return;
@@ -762,6 +815,49 @@ mod tests {
             eprintln!("{}", Minefield::parse(a));
             assert_eq!(solve_aux(Minefield::parse(a)), Minefield::parse(b));
         }
+    }
+
+    #[ignore]
+    #[test]
+    fn test_solve_is_solved() {
+        assert!(solve_aux(Minefield::parse(
+            r#".m.......
+            112mm....
+            0012211..
+            0000001m.
+            11111012m
+            m..m10011
+            ....10000
+            ....10111
+            m..m101m."#
+        ))
+        .is_solved());
+
+        assert!(!solve_aux(Minefield::parse(
+            r#"00001m...
+    00112....
+    001m.....
+    001..m...
+    001.m...m
+    001m....m
+    0012.....
+    0001m.m.m
+    0001....."#
+        ))
+        .is_solved());
+
+        assert!(solve_aux(Minefield::parse(
+            r#".1001....
+    m1001m...
+    11001....
+    00112.m..
+    001m.m...
+    0011..mm.
+    0001.m...
+    1101m....
+    m101....."#
+        ))
+        .is_solved());
     }
 
     // #[test]

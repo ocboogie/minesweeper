@@ -1,4 +1,4 @@
-use minesweeper::solver::solve;
+use minesweeper::solver::solve_rref;
 use minesweeper::{minefield::Minefield, solver::solve_chucking};
 
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -95,7 +95,7 @@ pub fn solver_benchmark(c: &mut Criterion) {
     // c.bench_function("solver 50x50, 390", |b| b.iter(|| solve(&mf_50x50_390)));
 
     c.bench_function("solver, 25x25, 100", |b| {
-        b.iter(|| solve(&mut (expert.clone())))
+        b.iter(|| solve_rref(&mut (expert.clone())))
     });
     c.bench_function("solver using chucking, 25x25, 100", |b| {
         b.iter(|| solve_chucking(&mut (expert.clone())))

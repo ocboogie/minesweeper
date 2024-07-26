@@ -1,3 +1,4 @@
+use rand::thread_rng;
 use web_time::Instant;
 
 use crate::canvas::Canvas;
@@ -5,7 +6,7 @@ use crate::ms_button::MinesweeperButton;
 use crate::ms_frame::MinesweeperFrame;
 use crate::ms_modal::MinesweeperModal;
 use crate::solver::{
-    solve_step, solve_step_chucking, AsyncGuessfreeGenerator, GeneratorStatus,
+    solve_step_chucking, solve_step_rref, AsyncGuessfreeGenerator, GeneratorStatus,
     ParallelGuessfreeGenerator,
 };
 use crate::utils::load_image;
@@ -374,7 +375,13 @@ impl Widget for &mut Minesweeper {
 
         if !self.started && response.clicked() {
             if let Some((x, y, _)) = self.last_pressed {
-                self.start_generating(y * self.board.minefield.width + x);
+                self.start(Minefield::random_start(
+                    &mut thread_rng(),
+                    self.board.minefield.width,
+                    self.board.minefield.height,
+                    self.mines,
+                ));
+                // self.start_generating(y * self.board.minefield.width + x);
             }
         }
 
@@ -385,7 +392,7 @@ impl Widget for &mut Minesweeper {
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::Space)) {
-            solve_step(&mut self.board.minefield);
+            solve_step_rref(&mut self.board.minefield);
         }
 
         let mut menu_modal = MinesweeperModal::new(self.menu_open);

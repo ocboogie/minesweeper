@@ -16,6 +16,7 @@ egui_extras = { version = "0.27.2", features = ["image"] }
 faer = "0.19.1"
 image = { version = "0.24.9", features = [ "png"] } 
 log = "0.4.21"
+nalgebra = "0.33.0"
 once_cell = "1.19.0"
 peroxide = "0.37.4"
 rand = "0.8.5"

@@ -2,13 +2,11 @@ use rand::thread_rng;
 use web_time::Instant;
 
 use crate::canvas::Canvas;
+use crate::generating::{AsyncGuessfreeGenerator, GeneratorStatus, ParallelGuessfreeGenerator};
 use crate::ms_button::MinesweeperButton;
 use crate::ms_frame::MinesweeperFrame;
 use crate::ms_modal::MinesweeperModal;
-use crate::solver::{
-    solve_step_chucking, solve_step_rref, AsyncGuessfreeGenerator, GeneratorStatus,
-    ParallelGuessfreeGenerator,
-};
+use crate::solver::{solve_step_chucking, solve_step_rref};
 use crate::utils::load_image;
 use crate::{
     board::Board,

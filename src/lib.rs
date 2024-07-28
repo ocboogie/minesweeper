@@ -1,9 +1,11 @@
 pub mod board;
 pub mod canvas;
+mod generating;
 pub mod minefield;
 pub mod minesweeper;
 pub mod ms_button;
 pub mod ms_frame;
 pub mod ms_modal;
+mod rref;
 pub mod solver;
 mod utils;

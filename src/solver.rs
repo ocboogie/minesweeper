@@ -1,31 +1,113 @@
-use crate::minefield::{CellKind, CellState, Minefield};
-use faer::{
-    linalg::zip::{MatShape, ViewMut},
-    mat::from_row_major_slice,
-    reborrow::{Reborrow, ReborrowMut},
-    scale,
-    sparse::SparseRowMatMut,
-    unzipped, zipped, MatMut,
-};
+use crate::minefield::{CellState, Minefield};
 use log::warn;
+use nalgebra::{DMatrix, DMatrixView, DVector, DVectorView};
 use peroxide::{
     fuga::{LinearAlgebra, Shape},
     structure::matrix::matrix,
 };
-use rand::thread_rng;
-use std::{
-    iter::once,
-    ops::{MulAssign, Range},
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        mpsc::{channel, sync_channel, Receiver, Sender, TryRecvError},
-        Arc, Mutex,
-    },
-    thread,
-};
-use web_time::{Duration, Instant};
+use std::{iter::once, ops::Range};
 
-const MIN_RENDER_INTERVAL: Duration = Duration::from_millis(100);
+pub fn find_solutions(
+    a: DMatrixView<f32>,
+    x: DVectorView<f32>,
+    b: DVector<f32>,
+    i: usize,
+    solutions: &mut Vec<DVector<f32>>,
+) {
+    if i == a.ncols() {
+        if a * &b == x {
+            solutions.push(b);
+        }
+
+        return;
+    }
+
+    let mut with_one = b.clone_owned();
+    with_one[i] = 1.0;
+
+    find_solutions(a, x, b, i + 1, solutions);
+    find_solutions(a, x, with_one, i + 1, solutions);
+}
+
+pub fn solve_step_bf(minefield: &mut Minefield) -> bool {
+    let mf_height = minefield.height;
+    let mf_width = minefield.width;
+
+    let hidden_cells = (0..(mf_height * mf_width))
+        .filter(|idx| minefield.cells[*idx].state == CellState::Hidden)
+        .filter(|idx| minefield.neighboring_open(*idx % mf_width, *idx / mf_width))
+        .collect::<Vec<_>>();
+
+    let mut matrix_height = 0;
+    let mut x_inner = Vec::new();
+
+    let a_inner = (0..mf_height)
+        .flat_map(move |dy| (0..mf_width).map(move |dx| (dx, dy)))
+        .filter(|(x, y)| minefield.cells[y * mf_width + x].state == CellState::Opened)
+        .filter_map(|(x, y)| {
+            let mines = minefield.count_mines(x, y);
+
+            if mines == 0 {
+                None
+            } else {
+                Some((x, y, mines))
+            }
+        })
+        .flat_map(|(x, y, mines)| {
+            matrix_height += 1;
+
+            let neighbor_mask = hidden_cells.iter().map(move |idx| {
+                let (dx, dy) = (idx % mf_width, idx / mf_width);
+
+                if dx.abs_diff(x) <= 1 && dy.abs_diff(y) <= 1 {
+                    1.0
+                } else {
+                    0.0
+                }
+            });
+
+            let value = mines as f32 - minefield.count_flags(x, y) as f32;
+
+            x_inner.push(value);
+
+            neighbor_mask
+        })
+        .collect::<Vec<f32>>();
+
+    let matrix_width = a_inner.len() / matrix_height;
+
+    let a = DMatrix::from_row_slice(matrix_height, matrix_width, &a_inner);
+    let x = DVector::from_row_slice(&x_inner);
+    let b = DVector::from_element(matrix_width, 0.0);
+
+    let mut solutions = Vec::new();
+
+    find_solutions(a.as_view(), x.as_view(), b, 0, &mut solutions);
+
+    if solutions.is_empty() {
+        return false;
+    }
+
+    let mut changed = false;
+
+    for i in 0..matrix_width {
+        let first = solutions[0][i];
+
+        if solutions.iter().any(|sol| sol[i] != first) {
+            continue;
+        }
+
+        if first == 0.0 {
+            minefield.open(hidden_cells[i] % mf_width, hidden_cells[i] / mf_width);
+            changed = true;
+        } else {
+            changed = true;
+            minefield.cells[hidden_cells[i]].state = CellState::Flagged;
+        }
+    }
+
+    changed
+}
 
 pub fn solve_step_chucking(
     minefield: &mut Minefield,
@@ -175,63 +257,13 @@ pub fn solve_chuck(
     changed
 }
 
-pub fn convert_ref_to_rref(mut matrix: MatMut<f32>) {
-    for y in (0..matrix.nrows()).rev() {
-        let mut row = matrix.rb_mut().row_mut(y);
-        let Some((leading, pivot)) = row
-            .rb_mut()
-            .iter()
-            .cloned()
-            .enumerate()
-            .find(|(_, a)| *a != 0.0)
-        else {
-            continue;
-        };
-
-        row.mul_assign(scale(1.0 / pivot));
-
-        for y2 in (0..y).rev() {
-            let above = matrix.rb().row(y2)[leading];
-
-            for x in leading..matrix.ncols() {
-                matrix.write(y2, x, matrix.read(y2, x) - above * matrix.read(y, x));
-            }
-        }
-    }
-}
-
-// pub fn sparse_convert_ref_to_rref(mut matrix: SparseRowMatMut<f32>) {
-//     for y in (0..matrix.nrows()).rev() {
-//         let mut row = matrix.rb_mut().row_mut(y);
-//         let Some((leading, pivot)) = row
-//             .rb_mut()
-//             .iter()
-//             .cloned()
-//             .enumerate()
-//             .find(|(_, a)| *a != 0.0)
-//         else {
-//             continue;
-//         };
-//
-//         row.mul_assign(scale(1.0 / pivot));
-//
-//         for y2 in (0..y).rev() {
-//             let above = matrix.rb().row(y2)[leading];
-//
-//             for x in leading..matrix.ncols() {
-//                 matrix.write(y2, x, matrix.read(y2, x) - above * matrix.read(y, x));
-//             }
-//         }
-//     }
-// }
-
 pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
-    eprintln!("before: {}", minefield);
     let mf_height = minefield.height;
     let mf_width = minefield.width;
 
     let hidden_cells = (0..(mf_height * mf_width))
         .filter(|idx| minefield.cells[*idx].state == CellState::Hidden)
+        .filter(|idx| minefield.neighboring_open(*idx % mf_width, *idx / mf_width))
         .collect::<Vec<_>>();
 
     let mut matrix_height = 0;
@@ -242,13 +274,11 @@ pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
         .filter_map(|(x, y)| {
             let mines = minefield.count_mines(x, y);
 
-            // TODO: Add optimization for when mines == 0
             if mines == 0 {
                 None
             } else {
                 Some((x, y, mines))
             }
-            // (x, y, mines)
         })
         .flat_map(|(x, y, mines)| {
             matrix_height += 1;
@@ -269,12 +299,6 @@ pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
         })
         .collect::<Vec<f32>>();
 
-    dbg!(
-        inner_matrix.len() / matrix_height,
-        matrix_height,
-        inner_matrix.len()
-    );
-
     if matrix_height == 0 {
         warn!("No hidden cells to solve");
         return false;
@@ -289,20 +313,26 @@ pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
         Shape::Row,
     );
 
-    eprintln!("{}", matrix_b.submat((0, 0), (7, 24)));
-    eprintln!(
-        "{}",
-        matrix_b.submat((0, matrix_width - 1), (7, matrix_width - 1))
-    );
-    // eprintln!("{}",
+    // eprintln!("{}", matrix_b);
+    // eprintln!("{}", matrix_b.submat((0, 0), (7, 12)));
+    // eprintln!(
+    //     "{}",
+    //     matrix_b.submat((0, matrix_width - 1), (7, matrix_width - 1))
+    // );
 
     let reduced = matrix_b.rref();
 
-    eprintln!("{}", reduced.submat((0, 0), (7, 24)));
-    eprintln!(
-        "{}",
-        reduced.submat((0, matrix_width - 1), (7, matrix_width - 1))
-    );
+    // eprintln!("{}", reduced.submat((0, 0), (7, 10)));
+    // eprintln!(
+    //     "{}",
+    //     reduced.submat((0, matrix_width - 1), (7, matrix_width - 1))
+    // );
+    //
+    // eprintln!("{}", reduced.submat((0, 0), (7, 10)));
+    // eprintln!(
+    //     "{}",
+    //     reduced.submat((0, matrix_width - 1), (7, matrix_width - 1))
+    // );
 
     let mut changed = false;
 
@@ -350,165 +380,16 @@ pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
     changed
 }
 
+pub fn solve_bf(minefield: &mut Minefield) {
+    while solve_step_bf(minefield) {}
+}
+
 pub fn solve_rref(minefield: &mut Minefield) {
     while solve_step_rref(minefield) {}
 }
 
 pub fn solve_chucking(minefield: &mut Minefield, chuck_size: usize, chuck_overlap: usize) {
     while solve_step_chucking(minefield, chuck_size, chuck_overlap) {}
-}
-
-pub enum GeneratorStatus {
-    Found(Minefield),
-    StillSolving(Option<Minefield>),
-}
-
-pub struct ParallelGuessfreeGenerator {
-    pub attempts: Arc<AtomicU32>,
-    pub found: Receiver<Minefield>,
-    pub stuck: Arc<Mutex<Option<Minefield>>>,
-    pub cancel: Sender<()>,
-}
-
-impl ParallelGuessfreeGenerator {
-    pub fn new(
-        start: usize,
-        width: usize,
-        height: usize,
-        mines: usize,
-    ) -> ParallelGuessfreeGenerator {
-        let (tx, rx) = sync_channel(1);
-        let (cancel_tx, cancel_rx) = channel();
-
-        let attempts = Arc::new(AtomicU32::new(0));
-
-        let stuck = Arc::new(Mutex::new(None));
-
-        let generator = ParallelGuessfreeGenerator {
-            attempts: attempts.clone(),
-            found: rx,
-            stuck: stuck.clone(),
-            cancel: cancel_tx,
-        };
-
-        thread::spawn(move || loop {
-            let mut minefield = Minefield::generate(&mut thread_rng(), width, height, mines);
-            attempts.fetch_add(1, Ordering::Relaxed);
-
-            if minefield.cells[start].kind == CellKind::Mine {
-                continue;
-            }
-
-            minefield.open(start % width, start / width);
-
-            solve_rref(&mut minefield);
-
-            if cancel_rx.try_recv().is_ok() {
-                return;
-            }
-
-            if minefield.is_solved() {
-                let _ = tx.send(minefield);
-                return;
-            }
-
-            {
-                let mut stuck = stuck.lock().unwrap();
-                *stuck = Some(minefield);
-            }
-        });
-
-        generator
-    }
-
-    pub fn attempts(&self) -> usize {
-        self.attempts.load(Ordering::Relaxed) as usize
-    }
-
-    pub fn run(&mut self) -> GeneratorStatus {
-        match self.found.try_recv() {
-            Ok(minefield) => GeneratorStatus::Found(minefield),
-            Err(TryRecvError::Empty) => {
-                GeneratorStatus::StillSolving(self.stuck.lock().unwrap().clone())
-            }
-            Err(TryRecvError::Disconnected) => {
-                panic!("Generator thread disconnected")
-            }
-        }
-    }
-}
-
-impl Drop for ParallelGuessfreeGenerator {
-    fn drop(&mut self) {
-        let _ = self.cancel.send(());
-    }
-}
-
-pub struct AsyncGuessfreeGenerator {
-    start: usize,
-    mines: usize,
-    width: usize,
-    height: usize,
-    attempts: usize,
-    solving: Option<Minefield>,
-}
-
-impl AsyncGuessfreeGenerator {
-    pub fn new(start: usize, width: usize, height: usize, mines: usize) -> Self {
-        AsyncGuessfreeGenerator {
-            start,
-            mines,
-            width,
-            height,
-            attempts: 0,
-            solving: Some(Minefield::new(width, height)),
-        }
-    }
-
-    pub fn attempts(&self) -> usize {
-        self.attempts
-    }
-
-    fn find_initial_minefield(&mut self) -> &mut Minefield {
-        loop {
-            self.attempts += 1;
-
-            let mut minefield =
-                Minefield::generate(&mut thread_rng(), self.width, self.height, self.mines);
-
-            if minefield.cells[self.start].kind != CellKind::Mine {
-                minefield.open(self.start % self.width, self.start / self.width);
-                self.solving = Some(minefield);
-                return self.solving.as_mut().unwrap();
-            }
-        }
-    }
-
-    pub fn run(&mut self) -> GeneratorStatus {
-        let start_instant = Instant::now();
-
-        let mut minefield = match self.solving {
-            Some(ref mut minefield) => minefield,
-            None => self.find_initial_minefield(),
-        };
-
-        while start_instant.elapsed() < MIN_RENDER_INTERVAL {
-            let stuck = solve_step_rref(minefield);
-
-            if minefield.is_solved() {
-                let mut solved_minefield = minefield.clone();
-                solved_minefield.hide();
-                solved_minefield.open(self.start % self.width, self.start / self.width);
-                return GeneratorStatus::Found(solved_minefield);
-            }
-
-            if stuck {
-                minefield = self.find_initial_minefield();
-            }
-        }
-
-        GeneratorStatus::StillSolving(Some(minefield.clone()))
-    }
 }
 
 #[cfg(test)]
@@ -537,7 +418,12 @@ mod tests {
         minefield
     }
 
-    fn solve_aux(mut minefield: Minefield) -> Minefield {
+    fn solve_bf_aux(mut minefield: Minefield) -> Minefield {
+        solve_bf(&mut minefield);
+        minefield
+    }
+
+    fn solve_rref_aux(mut minefield: Minefield) -> Minefield {
         solve_rref(&mut minefield);
         minefield
     }
@@ -627,22 +513,14 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
     fn test_solve_step() {
         for (a, b) in &[
             (
-                r#"0011..
-                   001m..
-                   0012..
-                   1122m.
-                   1F2m..
-                   1133mm
-                   012m.."#,
-                r#"000F
-             0000
-             0000
-             00F0"#,
+                r#".1.
+                   .F."#,
+                r#"111
+                   1F1"#,
             ),
             (
                 r#"000m
@@ -695,17 +573,13 @@ mod tests {
                     000000
                     000000"#,
             ),
-            // (
-            //     r#"00011.
-            //        0001F.
-            //        00011."#,
-            //     r#"000111
-            //        0001F1
-            //        000111"#,
-            // ),
         ] {
             eprintln!("{}", Minefield::parse(a));
-            assert_eq!(solve_step_aux(Minefield::parse(a)), Minefield::parse(b));
+            let mut left = Minefield::parse(a);
+            solve_step_bf(&mut left);
+
+            let right = Minefield::parse(b);
+            assert_eq!(left, right);
         }
     }
 
@@ -727,18 +601,17 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
     fn test_solve_equality() {
         let mut rng = StdRng::seed_from_u64(0);
 
-        for _ in 0..100 {
-            let mut minefield = Minefield::random_start(&mut rng, 30, 16, 99);
+        for _ in 0..1000 {
+            let mut minefield = Minefield::random_start(&mut rng, 4, 4, 2);
             let mut minefield2 = minefield.clone();
 
             eprintln!("{}", minefield);
 
-            solve_chucking(&mut minefield, 5, 4);
+            solve_bf(&mut minefield);
             solve_rref(&mut minefield2);
 
             assert_eq!(minefield, minefield2);
@@ -761,9 +634,10 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn test_solve() {
-        let solved = solve_aux(Minefield::parse(
+        let solved = solve_bf_aux(Minefield::parse(
             r#"m.1m.1......
                22112F22m..m
                F100223m....
@@ -803,7 +677,7 @@ mod tests {
                 r#"m.1
                221"#,
                 r#"F11
-               221"#,
+                   221"#,
             ),
             (
                 r#"m.1m.1.
@@ -813,14 +687,14 @@ mod tests {
             ),
         ] {
             eprintln!("{}", Minefield::parse(a));
-            assert_eq!(solve_aux(Minefield::parse(a)), Minefield::parse(b));
+            assert_eq!(solve_bf_aux(Minefield::parse(a)), Minefield::parse(b));
         }
     }
 
     #[ignore]
     #[test]
     fn test_solve_is_solved() {
-        assert!(solve_aux(Minefield::parse(
+        assert!(solve_bf_aux(Minefield::parse(
             r#".m.......
             112mm....
             0012211..
@@ -833,7 +707,7 @@ mod tests {
         ))
         .is_solved());
 
-        assert!(!solve_aux(Minefield::parse(
+        assert!(!solve_bf_aux(Minefield::parse(
             r#"00001m...
     00112....
     001m.....
@@ -846,7 +720,7 @@ mod tests {
         ))
         .is_solved());
 
-        assert!(solve_aux(Minefield::parse(
+        assert!(solve_bf_aux(Minefield::parse(
             r#".1001....
     m1001m...
     11001....
@@ -952,27 +826,52 @@ mod tests {
     //     );
     // }
 
-    #[test]
-    fn test_convert_ref_to_rref() {
-        use faer::mat;
+    // #[test]
+    // fn test_convert_ref_to_rref() {
+    //     use faer::mat;
+    //
+    //     let mut matrix: Mat<f32> = mat![
+    //         [1.0, 1.0, 0.0],
+    //         [0.0, 0.0, 0.0],
+    //         [0.0, 2.0, 1.0],
+    //         [0.0, 0.0, 0.0]
+    //     ];
+    //
+    //     convert_ref_to_rref(matrix.as_mut());
+    //
+    //     assert_eq!(
+    //         matrix,
+    //         mat![
+    //             [1.0, 0.0, -0.5 as f32],
+    //             [0.0, 0.0, 0.0],
+    //             [0.0, 1.0, 0.5],
+    //             [0.0, 0.0, 0.0]
+    //         ]
+    //     );
+    // }
 
-        let mut matrix: Mat<f32> = mat![
-            [1.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.0, 2.0, 1.0],
-            [0.0, 0.0, 0.0]
+    #[test]
+    fn test_find_solutions() {
+        #[rustfmt::skip]
+        let a = DMatrix::from_row_slice(4, 5, &[
+            1.0, 1.0, 0.0, 0.0, 0.0,
+            1.0, 1.0, 1.0, 0.0, 0.0,
+            0.0, 1.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0,
+        ]);
+
+        let x = DVector::from_row_slice(&[1.0, 1.0, 1.0, 1.0]);
+        let b = DVector::from_row_slice(&[0.0, 0.0, 0.0, 0.0, 0.0]);
+
+        let solutions = vec![
+            DVector::from_row_slice(&[0.0, 1.0, 0.0, 0.0, 1.0]),
+            DVector::from_row_slice(&[0.0, 1.0, 0.0, 1.0, 0.0]),
         ];
 
-        convert_ref_to_rref(matrix.as_mut());
+        let mut result = Vec::new();
 
-        assert_eq!(
-            matrix,
-            mat![
-                [1.0, 0.0, -0.5 as f32],
-                [0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.5],
-                [0.0, 0.0, 0.0]
-            ]
-        );
+        find_solutions(a.as_view(), x.as_view(), b, 0, &mut result);
+
+        assert_eq!(result, solutions);
     }
 }

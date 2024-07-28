@@ -119,6 +119,11 @@ impl Minefield {
         }
     }
 
+    pub fn neighboring_open(&self, x: usize, y: usize) -> bool {
+        self.neighbors(x, y)
+            .any(|(x, y)| self.cells[y * self.width + x].state == CellState::Opened)
+    }
+
     pub fn count_mines(&self, x: usize, y: usize) -> usize {
         self.neighbors(x, y)
             .filter(|(x, y)| self.cells[*y * self.width + *x].kind == CellKind::Mine)

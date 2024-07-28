@@ -1,10 +1,12 @@
 mod board;
 mod canvas;
+mod generating;
 mod minefield;
 mod minesweeper;
 mod ms_button;
 mod ms_frame;
 mod ms_modal;
+mod rref;
 mod solver;
 mod utils;
 

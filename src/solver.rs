@@ -5,9 +5,13 @@ use peroxide::{
     fuga::{LinearAlgebra, Shape},
     structure::matrix::matrix,
 };
-use std::{iter::once, ops::Range};
+use std::{
+    iter::{once, repeat},
+    ops::Range,
+};
 
 pub fn find_solutions(
+    mines: usize,
     a: DMatrixView<f32>,
     x: DVectorView<f32>,
     b: DVector<f32>,
@@ -15,7 +19,7 @@ pub fn find_solutions(
     solutions: &mut Vec<DVector<f32>>,
 ) {
     if i == a.ncols() {
-        if a * &b == x {
+        if a * &b == x && b.iter().sum::<f32>() == mines as f32 {
             solutions.push(b);
         }
 
@@ -25,8 +29,8 @@ pub fn find_solutions(
     let mut with_one = b.clone_owned();
     with_one[i] = 1.0;
 
-    find_solutions(a, x, b, i + 1, solutions);
-    find_solutions(a, x, with_one, i + 1, solutions);
+    find_solutions(mines, a, x, b, i + 1, solutions);
+    find_solutions(mines, a, x, with_one, i + 1, solutions);
 }
 
 pub fn solve_step_bf(minefield: &mut Minefield) -> bool {
@@ -35,7 +39,6 @@ pub fn solve_step_bf(minefield: &mut Minefield) -> bool {
 
     let hidden_cells = (0..(mf_height * mf_width))
         .filter(|idx| minefield.cells[*idx].state == CellState::Hidden)
-        .filter(|idx| minefield.neighboring_open(*idx % mf_width, *idx / mf_width))
         .collect::<Vec<_>>();
 
     let mut matrix_height = 0;
@@ -82,7 +85,16 @@ pub fn solve_step_bf(minefield: &mut Minefield) -> bool {
 
     let mut solutions = Vec::new();
 
-    find_solutions(a.as_view(), x.as_view(), b, 0, &mut solutions);
+    let undiscovered_mines = minefield.total_mines() - minefield.total_flags();
+
+    find_solutions(
+        undiscovered_mines,
+        a.as_view(),
+        x.as_view(),
+        b,
+        0,
+        &mut solutions,
+    );
 
     if solutions.is_empty() {
         return false;
@@ -97,11 +109,11 @@ pub fn solve_step_bf(minefield: &mut Minefield) -> bool {
             continue;
         }
 
+        changed = true;
+
         if first == 0.0 {
             minefield.open(hidden_cells[i] % mf_width, hidden_cells[i] / mf_width);
-            changed = true;
         } else {
-            changed = true;
             minefield.cells[hidden_cells[i]].state = CellState::Flagged;
         }
     }
@@ -261,26 +273,64 @@ pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
     let mf_height = minefield.height;
     let mf_width = minefield.width;
 
+    let mut changed = false;
+
+    // dbg!(&minefield);
+    for (x, y) in (0..mf_height)
+        .flat_map(move |dy| (0..mf_width).map(move |dx| (dx, dy)))
+        .filter(|(x, y)| minefield.cells[y * mf_width + x].state == CellState::Opened)
+        .collect::<Vec<_>>()
+    {
+        let mines = minefield.count_mines(x, y);
+        let flags = minefield.count_flags(x, y);
+        let hidden = minefield.count_hidden(x, y);
+
+        // dbg!(x, y, mines, flags, hidden);
+
+        if mines == flags {
+            for (x, y) in minefield.neighbors(x, y) {
+                if minefield.cells[y * mf_width + x].state == CellState::Hidden {
+                    minefield.open(x, y);
+                    changed = true;
+                }
+            }
+        }
+        if mines - flags == hidden {
+            for (x, y) in minefield.neighbors(x, y) {
+                if minefield.cells[y * mf_width + x].state == CellState::Hidden {
+                    minefield.cells[y * mf_width + x].state = CellState::Flagged;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    let undiscovered_mines = minefield.total_mines() - minefield.total_flags();
+
+    // dbg!(&minefield);
+
     let hidden_cells = (0..(mf_height * mf_width))
         .filter(|idx| minefield.cells[*idx].state == CellState::Hidden)
-        .filter(|idx| minefield.neighboring_open(*idx % mf_width, *idx / mf_width))
+        // .filter(|idx| minefield.neighboring_open(*idx % mf_width, *idx / mf_width))
         .collect::<Vec<_>>();
 
-    let mut matrix_height = 0;
+    let mut matrix_height = 1;
 
     let inner_matrix = (0..mf_height)
         .flat_map(move |dy| (0..mf_width).map(move |dx| (dx, dy)))
         .filter(|(x, y)| minefield.cells[y * mf_width + x].state == CellState::Opened)
-        .filter_map(|(x, y)| {
+        .map(|(x, y)| {
             let mines = minefield.count_mines(x, y);
+            let flags = minefield.count_flags(x, y);
 
-            if mines == 0 {
-                None
-            } else {
-                Some((x, y, mines))
-            }
+            // if mines == 0 {
+            //     None
+            // } else {
+            //     Some((x, y, mines as f32 - flags as f32))
+            // }
+            (x, y, mines as f32 - flags as f32)
         })
-        .flat_map(|(x, y, mines)| {
+        .flat_map(|(x, y, value)| {
             matrix_height += 1;
 
             let neighbor_mask = hidden_cells.iter().map(move |idx| {
@@ -293,10 +343,10 @@ pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
                 }
             });
 
-            let value = mines as f32 - minefield.count_flags(x, y) as f32;
-
             neighbor_mask.chain(once(value))
         })
+        .chain(repeat(1.0).take(hidden_cells.len()))
+        .chain(once(undiscovered_mines as f32))
         .collect::<Vec<f32>>();
 
     if matrix_height == 0 {
@@ -313,30 +363,15 @@ pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
         Shape::Row,
     );
 
-    // eprintln!("{}", matrix_b);
-    // eprintln!("{}", matrix_b.submat((0, 0), (7, 12)));
-    // eprintln!(
-    //     "{}",
-    //     matrix_b.submat((0, matrix_width - 1), (7, matrix_width - 1))
-    // );
+    eprintln!("{}", matrix_b);
 
     let reduced = matrix_b.rref();
 
-    // eprintln!("{}", reduced.submat((0, 0), (7, 10)));
-    // eprintln!(
-    //     "{}",
-    //     reduced.submat((0, matrix_width - 1), (7, matrix_width - 1))
-    // );
-    //
-    // eprintln!("{}", reduced.submat((0, 0), (7, 10)));
-    // eprintln!(
-    //     "{}",
-    //     reduced.submat((0, matrix_width - 1), (7, matrix_width - 1))
-    // );
-
-    let mut changed = false;
+    eprintln!("{}", reduced);
 
     for row in reduced.data.chunks(matrix_width) {
+        let y = row[row.len() - 1] as isize;
+
         let mut upper_bound: isize = 0;
         let mut lower_bound: isize = 0;
 
@@ -351,8 +386,6 @@ pub fn solve_step_rref(minefield: &mut Minefield) -> bool {
         if upper_bound == 0 && lower_bound == 0 {
             continue;
         }
-
-        let y = row[row.len() - 1] as isize;
 
         if upper_bound == y {
             for (val, idx) in row[..row.len() - 1].iter().zip(hidden_cells.iter()) {
@@ -404,7 +437,7 @@ mod tests {
         minefield
     }
 
-    fn solve_step_aux(mut minefield: Minefield) -> Minefield {
+    fn solve_step_rref_aux(mut minefield: Minefield) -> Minefield {
         solve_step_rref(&mut minefield);
         minefield
     }
@@ -431,86 +464,6 @@ mod tests {
     fn solve_chucking_aux(mut minefield: Minefield) -> Minefield {
         solve_chucking(&mut minefield, 5, 1);
         minefield
-    }
-
-    #[ignore]
-    #[test]
-    fn test_solve_chuck() {
-        assert_eq!(
-            solve_chuck_aux(
-                Minefield::parse(
-                    r#"000m
-                       000.
-                       000.
-                       00m."#,
-                ),
-                0..3,
-                0..3
-            ),
-            Minefield::parse(
-                r#"000m
-                   000.
-                   000.
-                   00m."#
-            )
-        );
-
-        assert_eq!(
-            solve_chuck_aux(
-                Minefield::parse(
-                    r#"m11m
-                       111.
-                       011.
-                       01m."#,
-                ),
-                0..3,
-                0..2
-            ),
-            Minefield::parse(
-                r#"F00m
-                   000.
-                   000.
-                   00m."#
-            )
-        );
-
-        assert_eq!(
-            solve_chuck_aux(
-                Minefield::parse(
-                    r#"m11m
-                       111.
-                       011.
-                       01m."#,
-                ),
-                0..3,
-                0..2
-            ),
-            Minefield::parse(
-                r#"F00m
-                   000.
-                   000.
-                   00m."#
-            )
-        );
-    }
-
-    #[ignore]
-    #[test]
-    fn test_solve_step_chucking() {
-        for (a, b) in &[(
-            r#"00011.
-               0001F.
-               00011."#,
-            r#"000111
-               0001F1
-               000111"#,
-        )] {
-            eprintln!("{}", Minefield::parse(a));
-            assert_eq!(
-                solve_step_chucking_aux(Minefield::parse(a)),
-                Minefield::parse(b)
-            );
-        }
     }
 
     #[test]
@@ -540,7 +493,7 @@ mod tests {
                 r#"0000
                    0000
                    00F0
-                   m.0."#,
+                   m.00"#,
             ),
             (
                 r#"0000
@@ -585,28 +538,12 @@ mod tests {
 
     #[ignore]
     #[test]
-    fn test_solve_step_equality() {
-        let mut rng = StdRng::seed_from_u64(0);
-
-        for _ in 0..100 {
-            let mut minefield = Minefield::random_start(&mut rng, 6, 3, 1);
-            let mut minefield2 = minefield.clone();
-
-            eprintln!("{}", minefield);
-
-            solve_step_chucking(&mut minefield, 5, 1);
-            solve_step_rref(&mut minefield2);
-
-            assert_eq!(minefield, minefield2);
-        }
-    }
-
-    #[test]
     fn test_solve_equality() {
         let mut rng = StdRng::seed_from_u64(0);
 
-        for _ in 0..1000 {
-            let mut minefield = Minefield::random_start(&mut rng, 4, 4, 2);
+        for i in 0..1000 {
+            eprintln!("{}", i);
+            let mut minefield = Minefield::random_start(&mut rng, 4, 4, 3);
             let mut minefield2 = minefield.clone();
 
             eprintln!("{}", minefield);
@@ -618,237 +555,101 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
-    fn test_solve_chucking() {
-        for (a, b) in &[(
-            r#"...110
-               ..1F10
-               ..1110"#,
-            r#"001110
-               001F10
-               001110"#,
-        )] {
-            eprintln!("{}", Minefield::parse(a));
-            assert_eq!(solve_chucking_aux(Minefield::parse(a)), Minefield::parse(b));
-        }
+    fn test_solve_rref() {
+        let mut minefield = Minefield::parse(
+            r#".m10
+               ..10
+               ..11
+               ..m."#,
+        );
+        let expected = Minefield::parse(
+            r#"1F10
+               1110
+               0111
+               01F1"#,
+        );
+        solve_rref(&mut minefield);
+        assert_eq!(expected, minefield);
+
+        let mut minefield = Minefield::parse(
+            r#"001m
+               001.
+               111.
+               .m.."#,
+        );
+        let expected = Minefield::parse(
+            r#"001F
+               0011
+               1110
+               1F10"#,
+        );
+        solve_rref(&mut minefield);
+        assert_eq!(expected, minefield);
+
+        let mut minefield = Minefield::parse(
+            r#".100
+               m210
+               .m10
+               ..10"#,
+        );
+        let expected = Minefield::parse(
+            r#"1100
+               F210
+               2F10
+               1110"#,
+        );
+        solve_rref(&mut minefield);
+        assert_eq!(expected, minefield);
+
+        let mut minefield = Minefield::parse(
+            r#"0000
+               0011
+               112m
+               .m.."#,
+        );
+        let expected = Minefield::parse(
+            r#"0000
+               0011
+               112F
+               1F21"#,
+        );
+        solve_rref(&mut minefield);
+        assert_eq!(expected, minefield);
+
+        let mut minefield = Minefield::parse(
+            r#"001.
+               111m
+               m.2.
+               ...m"#,
+        );
+        let expected = Minefield::parse(
+            r#"0011
+               111F
+               F122
+               111F"#,
+        );
+        solve_rref(&mut minefield);
+        assert_eq!(expected, minefield);
     }
 
-    #[ignore]
     #[test]
-    fn test_solve() {
-        let solved = solve_bf_aux(Minefield::parse(
-            r#"m.1m.1......
-               22112F22m..m
-               F100223m....
-               11001F3.m...
-               001134F42...
-               124F4FF3F2..
-               1FFFF43223m.
-               12333F101F..
-               1100111022.m
-               F21000001F3.
-               3F100011213F
-               F310002F202m
-               F200002F201."#,
-        ));
-        // let solved = solve_aux(Minefield::parse(
-        //     r#"m.1m.1......
-        //        22112F..m..m
-        //        F10022.m....
-        //        11001F..m...
-        //        001134m.....
-        //        124F4FF3F2..
-        //        1FFFF32212m.
-        //        1233321012..
-        //        00001F101F..
-        //        1100111022.m
-        //        F21000001F3.
-        //        3F100011213m
-        //        F310002F202m
-        //        F322224F323."#,
-        // ));
-
-        panic!("{}", solved);
-        return;
-
-        for (a, b) in &[
-            (
-                r#"m.1
-               221"#,
-                r#"F11
-                   221"#,
-            ),
-            (
-                r#"m.1m.1.
-                   22112F."#,
-                r#"F11F211
-                   22112F1"#,
-            ),
-        ] {
-            eprintln!("{}", Minefield::parse(a));
-            assert_eq!(solve_bf_aux(Minefield::parse(a)), Minefield::parse(b));
-        }
+    fn test_solve_bf() {
+        let mut minefield = Minefield::parse(
+            r#"0000
+               0011
+               112m
+               .m.."#,
+        );
+        let expected = Minefield::parse(
+            r#"0000
+               0011
+               112F
+               1F21"#,
+        );
+        solve_bf(&mut minefield);
+        assert_eq!(expected, minefield);
     }
-
-    #[ignore]
-    #[test]
-    fn test_solve_is_solved() {
-        assert!(solve_bf_aux(Minefield::parse(
-            r#".m.......
-            112mm....
-            0012211..
-            0000001m.
-            11111012m
-            m..m10011
-            ....10000
-            ....10111
-            m..m101m."#
-        ))
-        .is_solved());
-
-        assert!(!solve_bf_aux(Minefield::parse(
-            r#"00001m...
-    00112....
-    001m.....
-    001..m...
-    001.m...m
-    001m....m
-    0012.....
-    0001m.m.m
-    0001....."#
-        ))
-        .is_solved());
-
-        assert!(solve_bf_aux(Minefield::parse(
-            r#".1001....
-    m1001m...
-    11001....
-    00112.m..
-    001m.m...
-    0011..mm.
-    0001.m...
-    1101m....
-    m101....."#
-        ))
-        .is_solved());
-    }
-
-    // #[test]
-    // fn test_solve() {
-    //     assert_eq!(
-    //         solve_aux(Minefield::parse(
-    //             r#"00000000
-    // 00000000
-    // m..m0000
-    // 00000000
-    // 00000000
-    // 00000000
-    // mm000000
-    // ..000000"#,
-    //         ))
-    //         .format(),
-    //         r#"00000000
-    // 00000000
-    // F00F0000
-    // 00000000
-    // 00000000
-    // 00000000
-    // FF000000
-    // 00000000
-    // "#
-    //     );
-    //     assert_eq!(
-    //         solve_aux(Minefield::parse(
-    //             r#".0000000
-    // m0000000
-    // 00000000
-    // 00000m00
-    // 00000000
-    // 00000000
-    // m.m00000
-    // ...00000"#,
-    //         ))
-    //         .format(),
-    //         r#"00000000
-    // F0000000
-    // 00000000
-    // 00000F00
-    // 00000000
-    // 00000000
-    // F0F00000
-    // 00000000
-    // "#
-    //     );
-    //     assert_eq!(
-    //         solve_aux(Minefield::parse(
-    //             r#"........
-    // ...m.m..
-    // .m00000m
-    // .000000.
-    // m000000.
-    // .0000m..
-    // m0000m..
-    // .0000.mm"#,
-    //         ))
-    //         .format(),
-    //         r#"00000000
-    // 000F0F00
-    // 0F00000F
-    // 00000000
-    // F0000000
-    // 00000F00
-    // F0000F00
-    // 000000FF
-    // "#
-    //     );
-    //     assert_eq!(
-    //         solve_aux(Minefield::parse(
-    //             r#".......m
-    // ....m.mm
-    // ...0000.
-    // ...0000m
-    // m.m0000.
-    // ..00000.
-    // .m0000m.
-    // ..0000m."#,
-    //         ))
-    //         .format(),
-    //         r#"0000000F
-    // 0000F0FF
-    // 00000000
-    // 0000000F
-    // F0F00000
-    // 00000000
-    // 0F0000F0
-    // 000000F0
-    // "#
-    //     );
-    // }
-
-    // #[test]
-    // fn test_convert_ref_to_rref() {
-    //     use faer::mat;
-    //
-    //     let mut matrix: Mat<f32> = mat![
-    //         [1.0, 1.0, 0.0],
-    //         [0.0, 0.0, 0.0],
-    //         [0.0, 2.0, 1.0],
-    //         [0.0, 0.0, 0.0]
-    //     ];
-    //
-    //     convert_ref_to_rref(matrix.as_mut());
-    //
-    //     assert_eq!(
-    //         matrix,
-    //         mat![
-    //             [1.0, 0.0, -0.5 as f32],
-    //             [0.0, 0.0, 0.0],
-    //             [0.0, 1.0, 0.5],
-    //             [0.0, 0.0, 0.0]
-    //         ]
-    //     );
-    // }
 
     #[test]
     fn test_find_solutions() {
@@ -870,7 +671,7 @@ mod tests {
 
         let mut result = Vec::new();
 
-        find_solutions(a.as_view(), x.as_view(), b, 0, &mut result);
+        find_solutions(2, a.as_view(), x.as_view(), b, 0, &mut result);
 
         assert_eq!(result, solutions);
     }

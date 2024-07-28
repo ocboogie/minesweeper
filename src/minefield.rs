@@ -119,6 +119,27 @@ impl Minefield {
         }
     }
 
+    pub fn total_mines(&self) -> usize {
+        self.cells
+            .iter()
+            .filter(|cell| cell.kind == CellKind::Mine)
+            .count()
+    }
+
+    pub fn total_flags(&self) -> usize {
+        self.cells
+            .iter()
+            .filter(|cell| cell.state == CellState::Flagged)
+            .count()
+    }
+
+    pub fn total_hidden(&self) -> usize {
+        self.cells
+            .iter()
+            .filter(|cell| cell.state == CellState::Hidden)
+            .count()
+    }
+
     pub fn neighboring_open(&self, x: usize, y: usize) -> bool {
         self.neighbors(x, y)
             .any(|(x, y)| self.cells[y * self.width + x].state == CellState::Opened)
@@ -136,6 +157,12 @@ impl Minefield {
             .count()
     }
 
+    pub fn count_hidden(&self, x: usize, y: usize) -> usize {
+        self.neighbors(x, y)
+            .filter(|(x, y)| self.cells[*y * self.width + *x].state == CellState::Hidden)
+            .count()
+    }
+
     pub fn neighbors(&self, x: usize, y: usize) -> impl Iterator<Item = (usize, usize)> {
         let width = self.width;
         let height = self.height;
@@ -146,16 +173,11 @@ impl Minefield {
             .filter_map(move |(dx, dy)| {
                 let nx = x as isize + dx;
                 let ny = y as isize + dy;
-                if nx < 0 || nx >= width as isize {
+                if nx < 0 || nx >= width as isize || ny < 0 || ny >= height as isize {
                     return None;
                 }
-                if ny < 0 || ny >= height as isize {
-                    return None;
-                }
-                let nx = nx as usize;
-                let ny = ny as usize;
 
-                Some((nx, ny))
+                Some((nx as usize, ny as usize))
             })
     }
 

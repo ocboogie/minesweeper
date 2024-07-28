@@ -1,5 +1,5 @@
 use minesweeper::minefield::Minefield;
-use minesweeper::solver::{solve_bf, solve_endgame, solve_pruning};
+use minesweeper::solver::{solve_bf, solve_bm, solve_endgame, solve_pruning};
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use rand::rngs::StdRng;
@@ -75,6 +75,36 @@ pub fn solver_benchmark(c: &mut Criterion) {
             BatchSize::SmallInput,
         );
     });
+
+    c.bench_function(
+        "solver brute force with pruning and bitmasks 10x4x4x3 ",
+        |b| {
+            b.iter_batched(
+                || minefields4x4.clone(),
+                |mut minefields| {
+                    for mf in minefields.iter_mut() {
+                        solve_bm(mf);
+                    }
+                },
+                BatchSize::SmallInput,
+            );
+        },
+    );
+
+    c.bench_function(
+        "solver brute force with pruning and bitmasks 3x6x6x5 ",
+        |b| {
+            b.iter_batched(
+                || minefields6x6.clone(),
+                |mut minefields| {
+                    for mf in minefields.iter_mut() {
+                        solve_bm(mf);
+                    }
+                },
+                BatchSize::SmallInput,
+            );
+        },
+    );
     // c.bench_function("solver brute force with special endgame 3x6x6x3 ", |b| {
     //     b.iter_batched(
     //         || minefields6x6.clone(),

@@ -233,6 +233,88 @@ pub fn solve_step_pruning(minefield: &mut Minefield) -> bool {
     changed
 }
 
+pub fn solve_step_endgame(minefield: &mut Minefield) -> bool {
+    let mf_height = minefield.height;
+    let mf_width = minefield.width;
+
+    let hidden_cells = (0..(mf_height * mf_width))
+        .filter(|idx| minefield.cells[*idx].state == CellState::Hidden)
+        .filter(|idx| minefield.neighboring_open(*idx % mf_width, *idx / mf_width))
+        .collect::<Vec<_>>();
+
+    let mut matrix_height = 0;
+    let mut x_inner = Vec::new();
+
+    let a_inner = (0..mf_height)
+        .flat_map(move |dy| (0..mf_width).map(move |dx| (dx, dy)))
+        .filter(|(x, y)| minefield.cells[y * mf_width + x].state == CellState::Opened)
+        .filter_map(|(x, y)| {
+            let mines = minefield.count_mines(x, y);
+
+            if mines == 0 {
+                None
+            } else {
+                Some((x, y, mines))
+            }
+        })
+        .flat_map(|(x, y, mines)| {
+            matrix_height += 1;
+
+            let neighbor_mask = hidden_cells.iter().map(move |idx| {
+                let (dx, dy) = (idx % mf_width, idx / mf_width);
+
+                if dx.abs_diff(x) <= 1 && dy.abs_diff(y) <= 1 {
+                    1.0
+                } else {
+                    0.0
+                }
+            });
+
+            let value = mines as f32 - minefield.count_flags(x, y) as f32;
+
+            x_inner.push(value);
+
+            neighbor_mask
+        })
+        .collect::<Vec<f32>>();
+
+    let matrix_width = a_inner.len() / matrix_height;
+
+    let a = DMatrix::from_row_slice(matrix_height, matrix_width, &a_inner);
+    let x = DVector::from_row_slice(&x_inner);
+    let b = DVector::from_element(matrix_width, 0.0);
+
+    let mut solutions = Vec::new();
+
+    solve_step_pruning_aux(a.as_view(), x.as_view(), b.as_view(), 0, &mut solutions);
+
+    let mut changed = false;
+
+    if !solutions.is_empty() {
+        for i in 0..matrix_width {
+            let first = solutions[0][i];
+
+            if solutions.iter().any(|sol| sol[i] != first) {
+                continue;
+            }
+
+            changed = true;
+
+            if first == 0.0 {
+                minefield.open(hidden_cells[i] % mf_width, hidden_cells[i] / mf_width);
+            } else {
+                minefield.cells[hidden_cells[i]].state = CellState::Flagged;
+            }
+        }
+    }
+
+    if !changed {
+        return solve_step_pruning(minefield);
+    }
+
+    changed
+}
+
 pub fn solve_step_chucking(
     minefield: &mut Minefield,
     chuck_size: usize,
@@ -246,7 +328,129 @@ pub fn solve_step_chucking(
         let mut chuck_x = 0..chuck_size;
 
         while chuck_x.start <= minefield.width {
-            if solve_chuck(minefield, chuck_x.clone(), chuck_y.clone()) {
+            if solve_chuck_old(minefield, chuck_x.clone(), chuck_y.clone()) {
+                changed = true;
+            }
+
+            chuck_x.start += chuck_size - chuck_overlap;
+            chuck_x.end += chuck_size - chuck_overlap;
+        }
+
+        chuck_y.start += chuck_size - chuck_overlap;
+        chuck_y.end += chuck_size - chuck_overlap;
+    }
+
+    if !changed {
+        return solve_step_pruning(minefield);
+    }
+
+    changed
+}
+
+pub fn solve_chuck(
+    minefield: &mut Minefield,
+    chuck_x: Range<usize>,
+    chuck_y: Range<usize>,
+) -> bool {
+    let mf_height = minefield.height;
+    let mf_width = minefield.width;
+
+    let is_edge = |x: usize, y: usize| {
+        x + 1 == chuck_x.start || x == chuck_x.end || y + 1 == chuck_y.start || y == chuck_y.end
+    };
+
+    let hidden_cells = (0..(mf_height * mf_width))
+        .filter(|idx| {
+            is_edge(idx % mf_width, idx / mf_width)
+                || (chuck_x.contains(&(idx % mf_width))
+                    && chuck_y.contains(&(idx / mf_width))
+                    && (minefield.cells[*idx].state == CellState::Hidden))
+        })
+        .collect::<Vec<_>>();
+
+    let mut matrix_height = 0;
+    let mut x_inner = Vec::new();
+
+    let a_inner = (0..mf_height)
+        .flat_map(move |dy| (0..mf_width).map(move |dx| (dx, dy)))
+        .filter(|(x, y)| minefield.cells[y * mf_width + x].state == CellState::Opened)
+        .filter_map(|(x, y)| {
+            let mines = minefield.count_mines(x, y);
+
+            if mines == 0 {
+                None
+            } else {
+                Some((x, y, mines))
+            }
+        })
+        .flat_map(|(x, y, mines)| {
+            matrix_height += 1;
+
+            let neighbor_mask = hidden_cells.iter().map(move |idx| {
+                let (dx, dy) = (idx % mf_width, idx / mf_width);
+
+                if dx.abs_diff(x) <= 1 && dy.abs_diff(y) <= 1 {
+                    1.0
+                } else {
+                    0.0
+                }
+            });
+
+            let value = mines as f32 - minefield.count_flags(x, y) as f32;
+
+            x_inner.push(value);
+
+            neighbor_mask
+        })
+        .collect::<Vec<f32>>();
+
+    let matrix_width = a_inner.len() / matrix_height;
+
+    let a = DMatrix::from_row_slice(matrix_height, matrix_width, &a_inner);
+    let x = DVector::from_row_slice(&x_inner);
+    let b = DVector::from_element(matrix_width, 0.0);
+
+    let mut solutions = Vec::new();
+
+    solve_step_pruning_aux(a.as_view(), x.as_view(), b.as_view(), 0, &mut solutions);
+
+    let mut changed = false;
+
+    if !solutions.is_empty() {
+        for i in 0..matrix_width {
+            let first = solutions[0][i];
+
+            if solutions.iter().any(|sol| sol[i] != first) {
+                continue;
+            }
+
+            changed = true;
+
+            if first == 0.0 {
+                minefield.open(hidden_cells[i] % mf_width, hidden_cells[i] / mf_width);
+            } else {
+                minefield.cells[hidden_cells[i]].state = CellState::Flagged;
+            }
+        }
+    }
+
+    changed
+}
+
+pub fn solve_step_chucking_old(
+    minefield: &mut Minefield,
+    chuck_size: usize,
+    chuck_overlap: usize,
+) -> bool {
+    let mut chuck_y = 0..chuck_size;
+
+    let mut changed = false;
+
+    while chuck_y.start <= minefield.height {
+        let mut chuck_x = 0..chuck_size;
+
+        while chuck_x.start <= minefield.width {
+            if solve_chuck_old(minefield, chuck_x.clone(), chuck_y.clone()) {
                 changed = true;
             }
 
@@ -261,7 +465,7 @@ pub fn solve_step_chucking(
     changed
 }
 
-pub fn solve_chuck(
+pub fn solve_chuck_old(
     minefield: &mut Minefield,
     chuck_x: Range<usize>,
     chuck_y: Range<usize>,
@@ -541,6 +745,10 @@ pub fn solve_pruning(minefield: &mut Minefield) {
     while solve_step_pruning(minefield) {}
 }
 
+pub fn solve_endgame(minefield: &mut Minefield) {
+    while solve_step_endgame(minefield) {}
+}
+
 #[cfg(test)]
 mod tests {
     use faer::Mat;
@@ -549,7 +757,7 @@ mod tests {
     use super::*;
 
     fn solve_step_chucking_aux(mut minefield: Minefield) -> Minefield {
-        solve_step_chucking(&mut minefield, 5, 1);
+        solve_step_chucking_old(&mut minefield, 5, 1);
         minefield
     }
 
@@ -563,7 +771,7 @@ mod tests {
         chuck_x: Range<usize>,
         chuck_y: Range<usize>,
     ) -> Minefield {
-        solve_chuck(&mut minefield, chuck_x, chuck_y);
+        solve_chuck_old(&mut minefield, chuck_x, chuck_y);
         minefield
     }
 
@@ -660,13 +868,22 @@ mod tests {
             eprintln!("{}", i);
             let mut minefield = Minefield::random_start(&mut rng, 4, 4, 3);
             let mut minefield2 = minefield.clone();
+            let mut minefield3 = minefield.clone();
+            let mut minefield4 = minefield.clone();
+            let mut minefield5 = minefield.clone();
 
             eprintln!("{}", minefield);
 
             solve_bf(&mut minefield);
             solve_pruning(&mut minefield2);
+            solve_endgame(&mut minefield3);
+            solve_chucking(&mut minefield4, 5, 1);
+            solve_chucking(&mut minefield5, 3, 0);
 
             assert_eq!(minefield, minefield2);
+            assert_eq!(minefield, minefield3);
+            assert_eq!(minefield, minefield4);
+            assert_eq!(minefield, minefield5);
         }
     }
 

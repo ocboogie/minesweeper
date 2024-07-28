@@ -6,7 +6,7 @@ use crate::generating::{AsyncGuessfreeGenerator, GeneratorStatus, ParallelGuessf
 use crate::ms_button::MinesweeperButton;
 use crate::ms_frame::MinesweeperFrame;
 use crate::ms_modal::MinesweeperModal;
-use crate::solver::{solve_step_chucking, solve_step_rref};
+use crate::solver::{self, solve_step_pruning};
 use crate::utils::load_image;
 use crate::{
     board::Board,
@@ -390,7 +390,7 @@ impl Widget for &mut Minesweeper {
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::Space)) {
-            solve_step_rref(&mut self.board.minefield);
+            solve_step_pruning(&mut self.board.minefield);
         }
 
         let mut menu_modal = MinesweeperModal::new(self.menu_open);

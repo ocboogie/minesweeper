@@ -1,5 +1,5 @@
-use minesweeper::solver::{solve_bf, solve_endgame, solve_pruning, solve_rref};
-use minesweeper::{minefield::Minefield, solver::solve_chucking};
+use minesweeper::minefield::Minefield;
+use minesweeper::solver::{solve_bf, solve_endgame, solve_pruning};
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use rand::rngs::StdRng;
@@ -93,36 +93,6 @@ pub fn solver_benchmark(c: &mut Criterion) {
     // c.bench_function("solver using chucking, 25x25, 100", |b| {
     //     b.iter(|| solve_chucking(&mut (expert.clone())))
     // });
-
-    c.bench_function(
-        "solver brute force with chucking 3x3 with 1 overlap (10x4x4x3)",
-        |b| {
-            b.iter_batched(
-                || minefields4x4.clone(),
-                |mut minefields| {
-                    for mf in minefields.iter_mut() {
-                        solve_chucking(mf, 3, 1);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
-        },
-    );
-
-    c.bench_function(
-        "solver brute force with chucking 2x2 with 0 overlap (10x4x4x3) ",
-        |b| {
-            b.iter_batched(
-                || minefields4x4.clone(),
-                |mut minefields| {
-                    for mf in minefields.iter_mut() {
-                        solve_chucking(mf, 2, 0);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
-        },
-    );
 }
 
 criterion_group!(benches, solver_benchmark);

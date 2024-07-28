@@ -1,6 +1,6 @@
 use crate::{
     minefield::{CellKind, Minefield},
-    solver::{solve_rref, solve_step_rref},
+    solver::{solve, solve_step},
 };
 use rand::thread_rng;
 use std::{
@@ -58,7 +58,7 @@ impl ParallelGuessfreeGenerator {
 
             minefield.open(start % width, start / width);
 
-            solve_rref(&mut minefield);
+            solve(&mut minefield);
 
             if cancel_rx.try_recv().is_ok() {
                 return;
@@ -150,7 +150,7 @@ impl AsyncGuessfreeGenerator {
         };
 
         while start_instant.elapsed() < MIN_RENDER_INTERVAL {
-            let stuck = solve_step_rref(minefield);
+            let changed = solve_step(minefield);
 
             if minefield.is_solved() {
                 let mut solved_minefield = minefield.clone();
@@ -159,7 +159,7 @@ impl AsyncGuessfreeGenerator {
                 return GeneratorStatus::Found(solved_minefield);
             }
 
-            if stuck {
+            if !changed {
                 minefield = self.find_initial_minefield();
             }
         }

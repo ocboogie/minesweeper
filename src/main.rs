@@ -48,7 +48,8 @@ F200002F201."#,
             // This gives us image support:
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
-            Box::new(Minesweeper::start_from_minefield(&cc.egui_ctx, minefield))
+            Box::new(Minesweeper::new_beginner(&cc.egui_ctx))
+            // Box::new(Minesweeper::start_from_minefield(&cc.egui_ctx, minefield))
         }),
     )
 }

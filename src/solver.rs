@@ -380,7 +380,7 @@ pub fn solve_bm(minefield: &mut Minefield) {
 }
 
 pub fn solve_step(minefield: &mut Minefield) -> bool {
-    solve_step_pruning(minefield)
+    solve_step_bm(minefield)
 }
 
 pub fn solve(minefield: &mut Minefield) {

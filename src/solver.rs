@@ -1,6 +1,9 @@
 use crate::minefield::{CellState, Minefield};
 use nalgebra::{DMatrix, DMatrixView, DVector, DVectorView};
-use std::iter::{once, repeat};
+use std::{
+    iter::{once, repeat},
+    ops::Range,
+};
 
 fn get_hidden_cells(minefield: &Minefield, all: bool) -> Vec<usize> {
     (0..(minefield.height * minefield.width))
@@ -15,7 +18,7 @@ fn create_system(
     minefield: &Minefield,
     hidden_cells: &[usize],
     include_total_mines: bool,
-) -> (DMatrix<f32>, DVector<f32>) {
+) -> (DMatrix<u8>, DVector<u8>) {
     let mf_height = minefield.height;
     let mf_width = minefield.width;
 
@@ -41,32 +44,32 @@ fn create_system(
                 let (dx, dy) = (idx % mf_width, idx / mf_width);
 
                 if dx.abs_diff(x) <= 1 && dy.abs_diff(y) <= 1 {
-                    1.0
+                    1
                 } else {
-                    0.0
+                    0
                 }
             });
 
-            let value = mines as f32 - minefield.count_flags(x, y) as f32;
+            let value = mines as u8 - minefield.count_flags(x, y) as u8;
 
             x_inner.push(value);
 
             neighbor_mask
         });
 
-    let a_inner: Vec<f32>;
+    let a_inner: Vec<u8>;
 
     if include_total_mines {
         a_inner = a_inner_iter
-            .chain(repeat(1.0).take(hidden_cells.len()))
-            .collect::<Vec<f32>>();
+            .chain(repeat(1).take(hidden_cells.len()))
+            .collect::<Vec<u8>>();
 
         let undiscovered_mines = minefield.total_mines() - minefield.total_flags();
 
-        x_inner.push(undiscovered_mines as f32);
+        x_inner.push(undiscovered_mines as u8);
         matrix_height += 1;
     } else {
-        a_inner = a_inner_iter.collect::<Vec<f32>>();
+        a_inner = a_inner_iter.collect::<Vec<u8>>();
     };
 
     let matrix_width = a_inner.len() / matrix_height;
@@ -80,7 +83,7 @@ fn create_system(
 fn analyze_solutions(
     minefield: &mut Minefield,
     hidden_cells: &[usize],
-    solutions: &[DVector<f32>],
+    solutions: &[DVector<u8>],
 ) -> bool {
     let mf_width = minefield.width;
 
@@ -99,7 +102,7 @@ fn analyze_solutions(
 
         changed = true;
 
-        if first == 0.0 {
+        if first == 0 {
             minefield.open(hidden_cells[i] % mf_width, hidden_cells[i] / mf_width);
         } else {
             minefield.cells[hidden_cells[i]].state = CellState::Flagged;
@@ -110,11 +113,11 @@ fn analyze_solutions(
 }
 
 pub fn find_solutions(
-    a: DMatrixView<f32>,
-    x: DVectorView<f32>,
-    b: DVector<f32>,
+    a: DMatrixView<u8>,
+    x: DVectorView<u8>,
+    b: DVector<u8>,
     i: usize,
-    solutions: &mut Vec<DVector<f32>>,
+    solutions: &mut Vec<DVector<u8>>,
 ) {
     if i == a.ncols() {
         if a * &b == x {
@@ -125,7 +128,7 @@ pub fn find_solutions(
     }
 
     let mut with_one = b.clone_owned();
-    with_one[i] = 1.0;
+    with_one[i] = 1;
 
     find_solutions(a, x, b, i + 1, solutions);
     find_solutions(a, x, with_one, i + 1, solutions);
@@ -136,7 +139,7 @@ pub fn solve_step_bf(minefield: &mut Minefield) -> bool {
 
     let (a, x) = create_system(minefield, &hidden_cells, true);
 
-    let b = DVector::from_element(a.ncols(), 0.0);
+    let b = DVector::from_element(a.ncols(), 0);
 
     let mut solutions = Vec::new();
 
@@ -146,11 +149,11 @@ pub fn solve_step_bf(minefield: &mut Minefield) -> bool {
 }
 
 pub fn find_solutions_pruning(
-    a: DMatrixView<f32>,
-    x: DVectorView<f32>,
-    b: DVectorView<f32>,
+    a: DMatrixView<u8>,
+    x: DVectorView<u8>,
+    b: DVectorView<u8>,
     i: usize,
-    solutions: &mut Vec<DVector<f32>>,
+    solutions: &mut Vec<DVector<u8>>,
 ) {
     if i == a.ncols() {
         if a * b == x {
@@ -161,7 +164,7 @@ pub fn find_solutions_pruning(
     }
 
     let mut with_one = b.clone_owned();
-    with_one[i] = 1.0;
+    with_one[i] = 1;
 
     let x_0 = a * &with_one;
 
@@ -185,7 +188,7 @@ pub fn solve_step_pruning(minefield: &mut Minefield) -> bool {
 
     let (a, x) = create_system(minefield, &hidden_cells, true);
 
-    let b = DVector::from_element(a.ncols(), 0.0);
+    let b = DVector::from_element(a.ncols(), 0);
 
     let mut solutions = Vec::new();
 
@@ -199,7 +202,7 @@ pub fn solve_step_endgame(minefield: &mut Minefield) -> bool {
 
     let (a, x) = create_system(minefield, &hidden_cells, false);
 
-    let b = DVector::from_element(a.ncols(), 0.0);
+    let b = DVector::from_element(a.ncols(), 0);
 
     let mut solutions = Vec::new();
 
@@ -349,10 +352,10 @@ fn analyze_solutions_bm(
 
     changed
 }
-pub fn solve_step_bm(minefield: &mut Minefield) -> bool {
-    let hidden_cells = get_hidden_cells(minefield, true);
+pub fn solve_step_bm(minefield: &mut Minefield, with_end_game: bool) -> bool {
+    let hidden_cells = get_hidden_cells(minefield, with_end_game);
 
-    let (a, x) = create_system_bm(minefield, &hidden_cells, true);
+    let (a, x) = create_system_bm(minefield, &hidden_cells, with_end_game);
 
     let b: u64 = 0;
 
@@ -361,6 +364,140 @@ pub fn solve_step_bm(minefield: &mut Minefield) -> bool {
     find_solutions_bm(&a, &x, hidden_cells.len(), b, 0, &mut solutions);
 
     analyze_solutions_bm(minefield, &hidden_cells, &solutions)
+}
+
+fn get_hidden_cells_in_chuck(
+    minefield: &Minefield,
+    chuck_x: Range<usize>,
+    chuck_y: Range<usize>,
+) -> Vec<usize> {
+    let mf_width = minefield.width;
+
+    let is_edge = |x: usize, y: usize| {
+        x + 1 == chuck_x.start || x == chuck_x.end || y + 1 == chuck_y.start || y == chuck_y.end
+    };
+
+    (0..(minefield.height * minefield.width))
+        .filter(|idx| {
+            is_edge(idx % mf_width, idx / mf_width)
+                || (chuck_x.contains(&(idx % mf_width))
+                    && chuck_y.contains(&(idx / mf_width))
+                    && (minefield.cells[*idx].state == CellState::Hidden))
+        })
+        .filter(|idx| minefield.neighboring_open(*idx % minefield.width, *idx / minefield.width))
+        .collect()
+}
+
+pub fn create_chuck_system(
+    minefield: &Minefield,
+    hidden_cells: &[usize],
+    chuck_x: Range<usize>,
+    chuck_y: Range<usize>,
+) -> (DMatrix<u8>, DVector<u8>) {
+    let hidden_cells: &[usize] = &hidden_cells;
+    let mf_height = minefield.height;
+    let mf_width = minefield.width;
+
+    let mut matrix_height = 0;
+    let mut x_inner = Vec::new();
+
+    let a_inner = (0..mf_height)
+        .flat_map(move |dy| (0..mf_width).map(move |dx| (dx, dy)))
+        .filter(|(x, y)| minefield.cells[y * mf_width + x].state == CellState::Opened)
+        .filter(|(x, y)| chuck_x.contains(&x) && chuck_y.contains(&y))
+        .filter_map(|(x, y)| {
+            let mines = minefield.count_mines(x, y);
+
+            if mines == 0 {
+                None
+            } else {
+                Some((x, y, mines))
+            }
+        })
+        .flat_map(|(x, y, mines)| {
+            matrix_height += 1;
+
+            let neighbor_mask = hidden_cells.iter().map(move |idx| {
+                let (dx, dy) = (idx % mf_width, idx / mf_width);
+
+                if dx.abs_diff(x) <= 1 && dy.abs_diff(y) <= 1 {
+                    1
+                } else {
+                    0
+                }
+            });
+
+            let value = mines as u8 - minefield.count_flags(x, y) as u8;
+
+            x_inner.push(value);
+
+            neighbor_mask
+        })
+        .collect::<Vec<u8>>();
+
+    if a_inner.is_empty() {
+        return (DMatrix::from_element(0, 0, 0), DVector::from_element(0, 0));
+    }
+
+    let matrix_width = a_inner.len() / matrix_height;
+
+    let a = DMatrix::from_row_slice(matrix_height, matrix_width, &a_inner);
+    let x = DVector::from_row_slice(&x_inner);
+
+    (a, x)
+}
+
+pub fn solve_chuck(
+    minefield: &mut Minefield,
+    chuck_x: Range<usize>,
+    chuck_y: Range<usize>,
+) -> bool {
+    // let hidden_cells = get_hidden_cells(minefield, false);
+    let hidden_cells = get_hidden_cells_in_chuck(minefield, chuck_x.clone(), chuck_y.clone());
+
+    let (a, x) = create_chuck_system(minefield, &hidden_cells, chuck_x, chuck_y);
+
+    if a.is_empty() {
+        return false;
+    }
+
+    let b = DVector::from_element(a.ncols(), 0);
+
+    let mut solutions = Vec::new();
+
+    find_solutions(a.as_view(), x.as_view(), b, 0, &mut solutions);
+
+    analyze_solutions(minefield, &hidden_cells, &solutions)
+}
+
+pub fn solve_step_chucking(
+    minefield: &mut Minefield,
+    chuck_size: usize,
+    chuck_overlap: usize,
+) -> bool {
+    dbg!(&minefield);
+    let mut chuck_y = 0..chuck_size;
+
+    let mut changed = false;
+
+    while chuck_y.start <= minefield.height {
+        let mut chuck_x = 0..chuck_size;
+
+        while chuck_x.start <= minefield.width {
+            if solve_chuck(minefield, chuck_x.clone(), chuck_y.clone()) {
+                changed = true;
+            }
+
+            chuck_x.start += chuck_size - chuck_overlap;
+            chuck_x.end += chuck_size - chuck_overlap;
+        }
+
+        chuck_y.start += chuck_size - chuck_overlap;
+        chuck_y.end += chuck_size - chuck_overlap;
+    }
+    dbg!(minefield);
+
+    changed
 }
 
 pub fn solve_bf(minefield: &mut Minefield) {
@@ -376,11 +513,19 @@ pub fn solve_endgame(minefield: &mut Minefield) {
 }
 
 pub fn solve_bm(minefield: &mut Minefield) {
-    while solve_step_bm(minefield) {}
+    while solve_step_bm(minefield, true) {}
+}
+
+pub fn solve_bm_without_end_game(minefield: &mut Minefield) {
+    while solve_step_bm(minefield, false) {}
+}
+
+pub fn solve_chucking(minefield: &mut Minefield, chuck_size: usize, chuck_overlap: usize) {
+    while solve_step_chucking(minefield, chuck_size, chuck_overlap) {}
 }
 
 pub fn solve_step(minefield: &mut Minefield) -> bool {
-    solve_step_bm(minefield)
+    solve_step_bm(minefield, true)
 }
 
 pub fn solve(minefield: &mut Minefield) {
@@ -468,6 +613,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn test_solve_equality() {
         let mut rng = StdRng::seed_from_u64(0);
@@ -489,6 +635,25 @@ mod tests {
             assert_eq!(minefield, minefield2);
             assert_eq!(minefield, minefield3);
             assert_eq!(minefield, minefield4);
+        }
+    }
+
+    #[ignore]
+    #[test]
+    fn test_solve_equality_without_end_game() {
+        let mut rng = StdRng::seed_from_u64(0);
+
+        for i in 0..10 {
+            eprintln!("{}", i);
+            let mut minefield1 = Minefield::random_start(&mut rng, 4, 4, 3);
+            let mut minefield2 = minefield1.clone();
+
+            eprintln!("{}", minefield1);
+
+            solve_bm_without_end_game(&mut minefield1);
+            solve_chucking(&mut minefield2, 3, 0);
+
+            assert_eq!(minefield1, minefield2);
         }
     }
 

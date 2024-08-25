@@ -197,26 +197,6 @@ pub fn solve_step_pruning(minefield: &mut Minefield) -> bool {
     analyze_solutions(minefield, &hidden_cells, &solutions)
 }
 
-pub fn solve_step_endgame(minefield: &mut Minefield) -> bool {
-    let hidden_cells = get_hidden_cells(minefield, false);
-
-    let (a, x) = create_system(minefield, &hidden_cells, false);
-
-    let b = DVector::from_element(a.ncols(), 0);
-
-    let mut solutions = Vec::new();
-
-    find_solutions_pruning(a.as_view(), x.as_view(), b.as_view(), 0, &mut solutions);
-
-    let changed = analyze_solutions(minefield, &hidden_cells, &solutions);
-
-    if !changed {
-        return solve_step_pruning(minefield);
-    }
-
-    changed
-}
-
 fn create_system_bm(
     minefield: &Minefield,
     hidden_cells: &[usize],
@@ -292,7 +272,7 @@ fn is_solved(a: &[u64], x: &[u32], b: u64) -> bool {
     true
 }
 
-fn find_solutions_bm(
+fn find_solutions_pruning_bm(
     a: &[u64],
     x: &[u32],
     size: usize,
@@ -312,13 +292,13 @@ fn find_solutions_bm(
     with_one |= 1 << i;
 
     if is_solved(a, x, with_one) {
-        find_solutions_bm(a, x, size, with_one, i + 1, solutions);
+        find_solutions_pruning_bm(a, x, size, with_one, i + 1, solutions);
         solutions.push(with_one);
     } else if !is_unrecoverable(a, x, with_one) {
-        find_solutions_bm(a, x, size, with_one, i + 1, solutions);
+        find_solutions_pruning_bm(a, x, size, with_one, i + 1, solutions);
     }
 
-    find_solutions_bm(a, x, size, b, i + 1, solutions);
+    find_solutions_pruning_bm(a, x, size, b, i + 1, solutions);
 }
 
 fn analyze_solutions_bm(
@@ -352,16 +332,16 @@ fn analyze_solutions_bm(
 
     changed
 }
-pub fn solve_step_bm(minefield: &mut Minefield, with_end_game: bool) -> bool {
-    let hidden_cells = get_hidden_cells(minefield, with_end_game);
+pub fn solve_step_pruning_bm(minefield: &mut Minefield, with_total_mines: bool) -> bool {
+    let hidden_cells = get_hidden_cells(minefield, with_total_mines);
 
-    let (a, x) = create_system_bm(minefield, &hidden_cells, with_end_game);
+    let (a, x) = create_system_bm(minefield, &hidden_cells, with_total_mines);
 
     let b: u64 = 0;
 
     let mut solutions = Vec::new();
 
-    find_solutions_bm(&a, &x, hidden_cells.len(), b, 0, &mut solutions);
+    find_solutions_pruning_bm(&a, &x, hidden_cells.len(), b, 0, &mut solutions);
 
     analyze_solutions_bm(minefield, &hidden_cells, &solutions)
 }
@@ -508,16 +488,12 @@ pub fn solve_pruning(minefield: &mut Minefield) {
     while solve_step_pruning(minefield) {}
 }
 
-pub fn solve_endgame(minefield: &mut Minefield) {
-    while solve_step_endgame(minefield) {}
-}
-
 pub fn solve_bm(minefield: &mut Minefield) {
-    while solve_step_bm(minefield, true) {}
+    while solve_step_pruning_bm(minefield, true) {}
 }
 
-pub fn solve_bm_without_end_game(minefield: &mut Minefield) {
-    while solve_step_bm(minefield, false) {}
+pub fn solve_bm_without_total_mines(minefield: &mut Minefield) {
+    while solve_step_pruning_bm(minefield, false) {}
 }
 
 pub fn solve_chucking(minefield: &mut Minefield, chuck_size: usize, chuck_overlap: usize) {
@@ -525,7 +501,7 @@ pub fn solve_chucking(minefield: &mut Minefield, chuck_size: usize, chuck_overla
 }
 
 pub fn solve_step(minefield: &mut Minefield) -> bool {
-    solve_step_bm(minefield, true)
+    solve_step_pruning_bm(minefield, true)
 }
 
 pub fn solve(minefield: &mut Minefield) {
@@ -623,18 +599,15 @@ mod tests {
             let mut minefield = Minefield::random_start(&mut rng, 4, 4, 3);
             let mut minefield2 = minefield.clone();
             let mut minefield3 = minefield.clone();
-            let mut minefield4 = minefield.clone();
 
             eprintln!("{}", minefield);
 
             solve_bf(&mut minefield);
             solve_pruning(&mut minefield2);
-            solve_endgame(&mut minefield3);
-            solve_bm(&mut minefield4);
+            solve_bm(&mut minefield3);
 
             assert_eq!(minefield, minefield2);
             assert_eq!(minefield, minefield3);
-            assert_eq!(minefield, minefield4);
         }
     }
 
@@ -650,7 +623,7 @@ mod tests {
 
             eprintln!("{}", minefield1);
 
-            solve_bm_without_end_game(&mut minefield1);
+            solve_bm_without_total_mines(&mut minefield1);
             solve_chucking(&mut minefield2, 3, 0);
 
             assert_eq!(minefield1, minefield2);

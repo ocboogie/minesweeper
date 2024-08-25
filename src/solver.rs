@@ -346,25 +346,30 @@ pub fn solve_step_pruning_bm(minefield: &mut Minefield, with_total_mines: bool) 
     analyze_solutions_bm(minefield, &hidden_cells, &solutions)
 }
 
-fn get_hidden_cells_in_chuck(
+fn get_unknowns_in_chuck(
     minefield: &Minefield,
     chuck_x: Range<usize>,
     chuck_y: Range<usize>,
 ) -> Vec<usize> {
     let mf_width = minefield.width;
 
-    let is_edge = |x: usize, y: usize| {
-        x + 1 == chuck_x.start || x == chuck_x.end || y + 1 == chuck_y.start || y == chuck_y.end
-    };
+    let chuck_outer_x = chuck_x.start.saturating_sub(1)..(chuck_x.end + 1).min(minefield.width);
+    let chuck_outer_y = chuck_y.start.saturating_sub(1)..(chuck_y.end + 1).min(minefield.height);
 
     (0..(minefield.height * minefield.width))
-        .filter(|idx| {
-            is_edge(idx % mf_width, idx / mf_width)
-                || (chuck_x.contains(&(idx % mf_width))
-                    && chuck_y.contains(&(idx / mf_width))
-                    && (minefield.cells[*idx].state == CellState::Hidden))
+        .map(|idx| (idx % mf_width, idx / mf_width))
+        .filter(|(x, y)| chuck_outer_x.contains(x) && chuck_outer_y.contains(y))
+        .filter(|(x, y)| {
+            *x + 1 == chuck_x.start
+                || *x == chuck_x.end
+                || *y + 1 == chuck_y.start
+                || *y == chuck_y.end
+                || (chuck_x.contains(x)
+                    && chuck_y.contains(y)
+                    && (minefield.cells[y * mf_width + x].state == CellState::Hidden))
         })
-        .filter(|idx| minefield.neighboring_open(*idx % minefield.width, *idx / minefield.width))
+        .filter(|(x, y)| minefield.neighboring_open(*x, *y))
+        .map(|(x, y)| y * mf_width + x)
         .collect()
 }
 
@@ -374,7 +379,6 @@ pub fn create_chuck_system(
     chuck_x: Range<usize>,
     chuck_y: Range<usize>,
 ) -> (DMatrix<u8>, DVector<u8>) {
-    let hidden_cells: &[usize] = &hidden_cells;
     let mf_height = minefield.height;
     let mf_width = minefield.width;
 
@@ -384,7 +388,7 @@ pub fn create_chuck_system(
     let a_inner = (0..mf_height)
         .flat_map(move |dy| (0..mf_width).map(move |dx| (dx, dy)))
         .filter(|(x, y)| minefield.cells[y * mf_width + x].state == CellState::Opened)
-        .filter(|(x, y)| chuck_x.contains(&x) && chuck_y.contains(&y))
+        .filter(|(x, y)| chuck_x.contains(x) && chuck_y.contains(y))
         .filter_map(|(x, y)| {
             let mines = minefield.count_mines(x, y);
 
@@ -427,15 +431,63 @@ pub fn create_chuck_system(
     (a, x)
 }
 
+fn analyze_chuck_solutions(
+    minefield: &mut Minefield,
+    unknowns: &[usize],
+    solutions: &[DVector<u8>],
+    chuck_x: Range<usize>,
+    chuck_y: Range<usize>,
+) -> bool {
+    let mf_width = minefield.width;
+
+    let mut changed = false;
+
+    if solutions.is_empty() {
+        return false;
+    }
+
+    for i in 0..solutions[0].len() {
+        let (x, y) = (unknowns[i] % mf_width, unknowns[i] / mf_width);
+
+        // Don't change cells on the border
+        if !chuck_x.contains(&x) || !chuck_y.contains(&y) {
+            continue;
+        }
+
+        let first = solutions[0][i];
+
+        if solutions.iter().any(|sol| sol[i] != first) {
+            continue;
+        }
+
+        changed = true;
+
+        if first == 0 {
+            minefield.open(unknowns[i] % mf_width, unknowns[i] / mf_width);
+        } else {
+            minefield.cells[unknowns[i]].state = CellState::Flagged;
+        }
+    }
+
+    changed
+}
 pub fn solve_chuck(
     minefield: &mut Minefield,
     chuck_x: Range<usize>,
     chuck_y: Range<usize>,
 ) -> bool {
-    // let hidden_cells = get_hidden_cells(minefield, false);
-    let hidden_cells = get_hidden_cells_in_chuck(minefield, chuck_x.clone(), chuck_y.clone());
+    let unknowns = get_unknowns_in_chuck(minefield, chuck_x.clone(), chuck_y.clone());
 
-    let (a, x) = create_chuck_system(minefield, &hidden_cells, chuck_x, chuck_y);
+    // eprintln!("{}", minefield.to_string());
+
+    // for unknown in &unknowns {
+    //     let (x, y) = (unknown % minefield.width, unknown / minefield.width);
+    //
+    //     eprintln!("({}, {}): {:?}", x, y, minefield.cells[*unknown]);
+    //     eprintln!("{}", minefield.neighboring_open(x, y));
+    // }
+
+    let (a, x) = create_chuck_system(minefield, &unknowns, chuck_x.clone(), chuck_y.clone());
 
     if a.is_empty() {
         return false;
@@ -447,7 +499,7 @@ pub fn solve_chuck(
 
     find_solutions(a.as_view(), x.as_view(), b, 0, &mut solutions);
 
-    analyze_solutions(minefield, &hidden_cells, &solutions)
+    analyze_chuck_solutions(minefield, &unknowns, &solutions, chuck_x, chuck_y)
 }
 
 pub fn solve_step_chucking(
@@ -455,7 +507,6 @@ pub fn solve_step_chucking(
     chuck_size: usize,
     chuck_overlap: usize,
 ) -> bool {
-    dbg!(&minefield);
     let mut chuck_y = 0..chuck_size;
 
     let mut changed = false;
@@ -475,7 +526,10 @@ pub fn solve_step_chucking(
         chuck_y.start += chuck_size - chuck_overlap;
         chuck_y.end += chuck_size - chuck_overlap;
     }
-    dbg!(minefield);
+
+    if minefield.is_lost() {
+        return false;
+    }
 
     changed
 }
@@ -611,20 +665,19 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
-    fn test_solve_equality_without_end_game() {
+    fn test_solve_equality_without_total_mines() {
         let mut rng = StdRng::seed_from_u64(0);
 
-        for i in 0..10 {
+        for i in 0..100 {
             eprintln!("{}", i);
-            let mut minefield1 = Minefield::random_start(&mut rng, 4, 4, 3);
+            let mut minefield1 = Minefield::random_start(&mut rng, 6, 6, 3);
             let mut minefield2 = minefield1.clone();
 
             eprintln!("{}", minefield1);
 
             solve_bm_without_total_mines(&mut minefield1);
-            solve_chucking(&mut minefield2, 3, 0);
+            solve_chucking(&mut minefield2, 4, 3);
 
             assert_eq!(minefield1, minefield2);
         }
@@ -664,6 +717,78 @@ mod tests {
 0000"#,
         );
         solve_pruning(&mut minefield);
+        assert_eq!(expected, minefield);
+    }
+
+    #[test]
+    fn test_solve_chucking() {
+        let expected = Minefield::parse(
+            r#"FFF1
+2321
+0000
+0000
+"#,
+        );
+        let mut minefield = Minefield::parse(
+            r#"mmm.
+2321
+0000
+0000
+"#,
+        );
+        solve_chucking(&mut minefield, 3, 0);
+        assert_eq!(expected, minefield);
+    }
+
+    #[test]
+    fn test_solve_chuck() {
+        // let expected = Minefield::parse(
+        //     r#"FFF.
+        //  2321
+        //  0000
+        //  0000
+        //  "#,
+        // );
+        // let mut minefield = Minefield::parse(
+        //     r#"FFF.
+        //  2321
+        //  0000
+        //  0000
+        //  "#,
+        // );
+        // solve_chuck(&mut minefield, 0..3, 0..3);
+        // assert_eq!(expected, minefield);
+
+        //         let expected = Minefield::parse(
+        //             r#"FFF1
+        // 2321
+        // 0000
+        // 0000
+        // "#,
+        //         );
+        //         let mut minefield = Minefield::parse(
+        //             r#"FFF0
+        // 2321
+        // 0000
+        // 0000
+        // "#,
+        //         );
+        //         solve_chuck(&mut minefield, 3..6, 0..3);
+        //         assert_eq!(expected, minefield);
+
+        let expected = Minefield::parse(
+            r#"..m.
+.321
+mm10
+..10"#,
+        );
+        let mut minefield = Minefield::parse(
+            r#"..m.
+..21
+mm10
+..10"#,
+        );
+        solve_chuck(&mut minefield, 1..4, 1..4);
         assert_eq!(expected, minefield);
     }
 }

@@ -285,3 +285,20 @@ impl Debug for Minefield {
         write!(f, "\n{}", self.format())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_neighboring_open() {
+        let minefield = Minefield::parse(
+            r#"01m.
+01.m
+01..
+01m."#,
+        );
+
+        assert!(!minefield.neighboring_open(3, 1));
+    }
+}
